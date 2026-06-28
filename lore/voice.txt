@@ -1,0 +1,4 @@
+# The world's voice. One moment per line: key = the line it speaks.
+# The engine never hardcodes these — rewrite freely; the story is yours.
+
+seen.moth = She is here, and she knows your eye.
