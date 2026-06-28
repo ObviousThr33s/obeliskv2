@@ -1,19 +1,19 @@
-//! The CPU floor of the renderer, given a real window. softbuffer hands us a flat
-//! field of pixels; winit hands us the window and the keys. Everything between —
-//! turning the [`Frame`]'s coloured cells into lit pixels — is ours, which is the
-//! whole point: the terminal look, kept, but the pixels owned.
+//! Obelisk — the lens. The unified product: a real window showing the game panel
+//! *and* the status/spoken text together, both drawn from the one shared
+//! [`render::render`] the terminal build uses. Where [`obelisk`] (the terminal) is
+//! the reference view and `pane` is the smallest honest CPU-floor slice, this is
+//! the destination — where glyphs and the rest of the experience land.
 //!
-//! This is the smallest honest slice. Each cell is a solid block of its ink — no
-//! glyphs yet, and no camera yet (the field is shown from its own origin, not
-//! centred on the player). Glyphs and a player-centred view are the next slices;
-//! the GPU ceiling and its mastering pass slot in behind this same buffer later.
+//! It carries a **heartbeat**: a render clock beats a gentle redraw so the
+//! fountain's aura breathes between keystrokes, exactly as the terminal does. Two
+//! clocks meet but never mix — *world-time* moves only on a keypress; *render-time*
+//! (`start.elapsed()`) only breathes the eye. The world never changes off the beat.
 //!
-//! It presents the *same* [`render::render`] frame the terminal build draws, so
-//! the two renderers stay one truth, never a fork.
+//! [`obelisk`]: ../main.rs
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use softbuffer::{Context, Surface};
 use winit::application::ApplicationHandler;
@@ -29,13 +29,18 @@ use obelisk::render::{self, Frame};
 use obelisk::terrain;
 use obelisk::world::{Intent, World};
 
-/// How many cells the window shows, and how many pixels make a cell. A cell is a
-/// square block for now; a glyph atlas will later paint inside this same box. The
-/// height includes [`render::STATUS_ROWS`] for the status line and spoken lore at
-/// the foot, so the window carries the same status the terminal does.
+/// How many cells the window shows, and how many pixels make a cell. The height
+/// includes [`render::STATUS_ROWS`] for the status line and spoken lore at the foot,
+/// so the panel and the text ride in one window. Glyphs paint inside this box later;
+/// for now each cell is a solid block of its ink, but the aura already breathes.
 const VIEW_W: usize = 48;
 const VIEW_H: usize = 32 + render::STATUS_ROWS;
 const CELL: usize = 16;
+
+/// The heartbeat: how often the render clock asks for a fresh frame. Fast enough that
+/// the slow breath reads as smooth, slow enough that the machine mostly sleeps — a
+/// steady beat, never a busy spin.
+const BEAT: Duration = Duration::from_millis(50);
 
 fn main() -> Result<(), winit::error::EventLoopError> {
 	let mut world = build_world();
@@ -48,11 +53,10 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 			return Ok(());
 		}
 	};
-	// Wait, not Poll: the view is still between keystrokes, so the machine sleeps
-	// until something happens. Serene by default, and no busy spin.
+	// The heartbeat sets the cadence from `about_to_wait`; start it waiting.
 	event_loop.set_control_flow(ControlFlow::Wait);
 
-	let mut pane = Pane {
+	let mut lens = Lens {
 		world,
 		frame: Box::new(Frame::blank()),
 		start: Instant::now(),
@@ -60,7 +64,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 		context: None,
 		surface: None,
 	};
-	event_loop.run_app(&mut pane)
+	event_loop.run_app(&mut lens)
 }
 
 /// The same small world the terminal build raises: the player among grown stone
@@ -76,7 +80,7 @@ fn build_world() -> World {
 
 /// The window and its held resources. The frame is boxed and reused tick to tick
 /// (ward 2): [`render::render`] repaints it, never reallocating.
-struct Pane {
+struct Lens {
 	world:   World,
 	frame:   Box<Frame<VIEW_W, VIEW_H>>,
 	/// The render clock — render-time, never world-time. The breath and time-pulse
@@ -87,15 +91,15 @@ struct Pane {
 	surface: Option<Surface<Rc<Window>, Rc<Window>>>,
 }
 
-impl ApplicationHandler for Pane {
-	/// The window is born here — winit only hands us a surface once the platform
-	/// is ready, so creation belongs in `resumed`, not `main`.
+impl ApplicationHandler for Lens {
+	/// The window is born here — winit only hands us a surface once the platform is
+	/// ready, so creation belongs in `resumed`, not `main`.
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 		if self.window.is_some() {
 			return; // already raised; a second resume changes nothing
 		}
 		let attrs = Window::default_attributes()
-			.with_title("Obelisk — a window onto the field")
+			.with_title("Obelisk — the lens")
 			.with_inner_size(LogicalSize::new(as_u32(VIEW_W * CELL), as_u32(VIEW_H * CELL)));
 
 		let window = match event_loop.create_window(attrs) {
@@ -137,9 +141,19 @@ impl ApplicationHandler for Pane {
 			_ => {}
 		}
 	}
+
+	/// The heartbeat. Between events winit calls this; we ask for one fresh frame and
+	/// then sleep until the next beat. That steady redraw is what lets render-time
+	/// breathe the aura while the world itself holds perfectly still.
+	fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+		if let Some(window) = &self.window {
+			window.request_redraw();
+		}
+		event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + BEAT));
+	}
 }
 
-impl Pane {
+impl Lens {
 	/// One keystroke, one tick — the same bindings as the terminal build. Release
 	/// events and unbound keys spend nothing; only a press that means something ticks.
 	fn on_key(&mut self, event_loop: &ActiveEventLoop, key: KeyEvent) {
@@ -170,11 +184,11 @@ impl Pane {
 		};
 		self.world.tick(intent);
 		if let Some(window) = &self.window {
-			window.request_redraw(); // the world moved; ask for fresh pixels
+			window.request_redraw(); // the world moved; ask for fresh pixels at once
 		}
 	}
 
-	/// Paint the world into the cell grid (the pure render seam), then the grid into
+	/// Paint the world into the cell grid (the shared render seam), then the grid into
 	/// the window's pixels. Any failure simply skips this frame — degrade, don't crash.
 	fn redraw(&mut self) {
 		let (Some(window), Some(surface)) = (&self.window, &mut self.surface) else {
@@ -204,12 +218,14 @@ impl Pane {
 /// so any window size letterboxes onto void ground rather than reading off the end.
 ///
 /// No allocation, no raw indexing (ward 2, the safe subset): the buffer is written
-/// in place and every access is bounds-checked.
+/// in place and every access is bounds-checked. Glyphs are not yet drawn — each cell
+/// is a solid block of its ink — so the status text reads as colour, not letters,
+/// until the glyph atlas lands.
 ///
 /// [`VOID`]: render::palette::VOID
 fn rasterise<const W: usize, const H: usize>(
-	frame: &Frame<W, H>,
-	width: usize,
+	frame:  &Frame<W, H>,
+	width:  usize,
 	height: usize,
 	pixels: &mut [u32],
 ) {
