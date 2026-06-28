@@ -35,6 +35,16 @@ pub enum Intent {
 	TurnRight,
 }
 
+/// A safe spot — the fountain of wisps. Within `radius` cells of `center`
+/// (Chebyshev distance, the grid's own reach) the observer-tension rests: the
+/// moth does not creep when unwatched, and turning away speaks no parting. A
+/// place to set the eye down and breathe; nothing here is lost.
+#[derive(Clone, Copy)]
+struct Sanctuary {
+	center: Pos,
+	radius: i32,
+}
+
 pub struct World {
 	pub field:        Field,
 	/// The way the player looks — steers forward steps, and later sight.
@@ -49,6 +59,8 @@ pub struct World {
 	/// The line the world surfaced this tick, for a renderer to drain. `None`
 	/// when nothing was said.
 	pub spoken:       Option<String>,
+	/// The safe spot, if this world has one — see [`Sanctuary`].
+	sanctuary:        Option<Sanctuary>,
 	haps:             Haps,
 }
 
@@ -65,6 +77,7 @@ impl World {
 			recollection: Recollection::new(FADE),
 			lore: Lore::default(),
 			spoken: None,
+			sanctuary: None,
 			haps: Haps::new(),
 		}
 	}
@@ -73,6 +86,27 @@ impl World {
 	pub fn voiced(mut self, lore: Lore) -> Self {
 		self.lore = lore;
 		self
+	}
+
+	/// Place a safe spot — a fountain of wisps — at `center`, reaching `radius`
+	/// cells. Within it the gaze may rest: the moth holds even unwatched, and
+	/// looking away grieves nothing. Builder-style, like [`voiced`](World::voiced).
+	pub fn with_sanctuary(mut self, center: Pos, radius: i32) -> Self {
+		self.sanctuary = Some(Sanctuary { center, radius });
+		self
+	}
+
+	/// Whether `pos` lies within the safe spot. `false` when this world has none.
+	pub fn is_safe(&self, pos: Pos) -> bool {
+		match self.sanctuary {
+			Some(s) => (pos.x - s.center.x).abs().max((pos.y - s.center.y).abs()) <= s.radius,
+			None => false,
+		}
+	}
+
+	/// The safe spot's heart and reach, for a renderer to paint. `None` when unset.
+	pub fn sanctuary(&self) -> Option<(Pos, i32)> {
+		self.sanctuary.map(|s| (s.center, s.radius))
 	}
 
 	/// One press, one tick — three phases. The player's [`Intent`] drives phase 1;
@@ -103,13 +137,15 @@ impl World {
 		if sees_moth && !self.seen {
 			let _ = self.haps.push(Event::Seen { id: MOTH });
 		}
-		// The tick she passes out of a gaze that was holding her: the watcher loses her.
-		if !sees_moth && self.watching {
+		// The tick she passes out of a gaze that was holding her: the watcher loses her —
+		// unless this is the safe spot, where turning away costs nothing.
+		if !sees_moth && self.watching && !self.is_safe(pp) {
 			let _ = self.haps.push(Event::Lost { id: MOTH });
 		}
-		// Unwatched, the moth comes to the light — one step toward the player.
+		// Unwatched, the moth comes to the light — one step toward the player. But not
+		// within the safe spot, where the gaze may rest and nothing creeps.
 		// Decided here from this tick's snapshot; applied below in the mutation phase.
-		if !sees_moth {
+		if !sees_moth && !self.is_safe(pp) {
 			let step = mp.step_toward(pp);
 			let (dx, dy) = (step.x - mp.x, step.y - mp.y);
 			if (dx, dy) != (0, 0) {
@@ -287,5 +323,42 @@ mod tests {
 		for _ in 0..20 { w.tick(Intent::Wait); }
 		assert!(w.seen);
 		assert!(w.haps.is_empty());
+	}
+
+	#[test]
+	fn in_the_safe_spot_the_gaze_may_rest_and_nothing_creeps() {
+		// The player rests at a fountain; the moth sits five cells east, in view.
+		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 5, y: 0 })
+			.with_sanctuary(Pos { x: 0, y: 0 }, 2);
+		w.tick(Intent::Wait);      // watched, she holds
+		w.tick(Intent::TurnRight); // look away — outside a sanctuary she would creep
+		assert_eq!(
+			w.field.get(MOTH).unwrap().pos, Pos { x: 5, y: 0 },
+			"within the safe spot, nothing follows when the eye turns away",
+		);
+	}
+
+	#[test]
+	fn the_safe_spot_keeps_only_its_own_ground() {
+		// A sanctuary exists, but the player stands well beyond its reach.
+		let mut w = World::new(Pos { x: 20, y: 20 }, Pos { x: 25, y: 20 })
+			.with_sanctuary(Pos { x: 0, y: 0 }, 2);
+		w.tick(Intent::Wait);
+		w.tick(Intent::TurnRight); // look away, far from safety — she creeps
+		assert_eq!(
+			w.field.get(MOTH).unwrap().pos, Pos { x: 24, y: 20 },
+			"beyond the safe spot, looking away still draws her on",
+		);
+	}
+
+	#[test]
+	fn the_safe_spot_grieves_no_parting() {
+		let lore = Lore::parse("lost.moth = She is gone the moment you turn.");
+		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 5, y: 0 })
+			.voiced(lore)
+			.with_sanctuary(Pos { x: 0, y: 0 }, 2);
+		w.tick(Intent::Wait);      // held and watched
+		w.tick(Intent::TurnRight); // turn away — she is right there, not lost
+		assert_eq!(w.spoken, None, "in the safe spot, turning away parts from nothing");
 	}
 }

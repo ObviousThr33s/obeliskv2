@@ -30,6 +30,8 @@ const AMBER:  Color = Color::Rgb { r: 255, g: 176, b: 0 };   // the moment she i
 const WALL:   Color = Color::Rgb { r: 0,   g: 90,  b: 0 };   // standing stone
 const GROUND: Color = Color::Rgb { r: 0,   g: 30,  b: 0 };   // the dark between
 const STATUS: Color = Color::Rgb { r: 0,   g: 150, b: 0 };   // the line at the foot
+const WISP:   Color = Color::Rgb { r: 120, g: 220, b: 230 }; // the fountain's heart
+const POOL:   Color = Color::Rgb { r: 0,   g: 70,  b: 80 };  // safe ground, a cool glow
 
 fn main() -> io::Result<()> {
 	let mut world = build_world();
@@ -62,7 +64,9 @@ fn main() -> io::Result<()> {
 /// moth a little way off. The story comes from `lore/voice.txt`, baked in at build.
 fn build_world() -> World {
 	let lore = Lore::parse(include_str!("../lore/voice.txt"));
-	let mut world = World::new(Pos { x: 20, y: 12 }, Pos { x: 28, y: 9 }).voiced(lore);
+	let mut world = World::new(Pos { x: 20, y: 12 }, Pos { x: 28, y: 9 })
+		.voiced(lore)
+		.with_sanctuary(Pos { x: 16, y: 12 }, 2);
 	terrain::scatter_walls(&mut world.field, 0xB0A7, 40, 24, 70);
 	world
 }
@@ -80,6 +84,7 @@ fn draw(out: &mut impl Write, world: &World) -> io::Result<()> {
 		None => return Ok(()),
 	};
 	let remembered = world.recollection.recall(MOTH).copied();
+	let fountain = world.sanctuary().map(|(c, _)| c);
 
 	queue!(out, terminal::Clear(ClearType::All))?;
 	for sy in 0..view_rows {
@@ -88,7 +93,9 @@ fn draw(out: &mut impl Write, world: &World) -> io::Result<()> {
 				x: player.x + i32::from(sx) - cx,
 				y: player.y + i32::from(sy) - cy,
 			};
-			let (glyph, colour) = cell(here, player, &remembered, &world.field);
+			let safe = world.is_safe(here);
+				let (glyph, colour) =
+					cell(here, player, &remembered, &world.field, safe, fountain == Some(here));
 			queue!(
 				out,
 				cursor::MoveTo(sx, sy),
@@ -123,9 +130,19 @@ fn draw(out: &mut impl Write, world: &World) -> io::Result<()> {
 /// What stands at one world cell, and in what tone. The moth is never drawn from
 /// her true position — only from what the watcher remembers — so looking away
 /// truly loses her.
-fn cell(here: Pos, player: Pos, remembered: &Option<Sighting>, field: &Field) -> (char, Color) {
+fn cell(
+	here: Pos,
+	player: Pos,
+	remembered: &Option<Sighting>,
+	field: &Field,
+	safe: bool,
+	fountain: bool,
+) -> (char, Color) {
 	if here == player {
 		return ('@', LIGHT);
+	}
+	if fountain {
+		return ('○', WISP); // the fountain's heart, where the wisps gather
 	}
 	if let Some(s) = remembered {
 		if s.x == here.x && s.y == here.y {
@@ -142,6 +159,9 @@ fn cell(here: Pos, player: Pos, remembered: &Option<Sighting>, field: &Field) ->
 		if e.id != PLAYER && e.id != MOTH {
 			return ('#', WALL);
 		}
+	}
+	if safe {
+		return ('∘', POOL); // still water lit by wisps — the gaze may rest here
 	}
 	('·', GROUND)
 }
