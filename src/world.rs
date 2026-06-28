@@ -96,11 +96,26 @@ impl World {
 		self
 	}
 
-	/// Whether `pos` lies within the safe spot. `false` when this world has none.
+	/// Whether `pos` lies within the safe spot — anywhere the aura still has
+	/// strength. `false` when this world has no fountain.
 	pub fn is_safe(&self, pos: Pos) -> bool {
+		self.aura_at(pos) > 0.0
+	}
+
+	/// The fountain's aura strength at `pos`: `1.0` at its heart, fading to `0.0`
+	/// at the edge of its pall (Euclidean — a round glow), and `0.0` beyond it or
+	/// when there is no fountain. One field, shared: the render paints this number
+	/// and the world reads it, so what is seen is exactly what is felt.
+	#[allow(clippy::cast_precision_loss)] // grid coords are small; the loss is nothing
+	pub fn aura_at(&self, pos: Pos) -> f32 {
 		match self.sanctuary {
-			Some(s) => (pos.x - s.center.x).abs().max((pos.y - s.center.y).abs()) <= s.radius,
-			None => false,
+			Some(s) => {
+				let dx = (pos.x - s.center.x) as f32;
+				let dy = (pos.y - s.center.y) as f32;
+				let reach = s.radius as f32 + 1.0;
+				(1.0 - (dx * dx + dy * dy).sqrt() / reach).max(0.0)
+			}
+			None => 0.0,
 		}
 	}
 
@@ -349,6 +364,20 @@ mod tests {
 			w.field.get(MOTH).unwrap().pos, Pos { x: 24, y: 20 },
 			"beyond the safe spot, looking away still draws her on",
 		);
+	}
+
+	#[test]
+	fn the_fountain_aura_is_strongest_at_its_heart_and_fades_to_nothing() {
+		let w = World::new(Pos { x: 0, y: 0 }, Pos { x: 40, y: 40 })
+			.with_sanctuary(Pos { x: 0, y: 0 }, 2);
+		assert!((w.aura_at(Pos { x: 0, y: 0 }) - 1.0).abs() < 1e-6, "full at the heart");
+		let near = w.aura_at(Pos { x: 1, y: 0 });
+		let far = w.aura_at(Pos { x: 2, y: 0 });
+		assert!(near < 1.0 && near > far && far > 0.0, "fades with distance, still within the pall");
+		assert_eq!(w.aura_at(Pos { x: 5, y: 0 }), 0.0, "nothing beyond the pall");
+
+		let bare = World::new(Pos { x: 0, y: 0 }, Pos { x: 5, y: 0 });
+		assert_eq!(bare.aura_at(Pos { x: 0, y: 0 }), 0.0, "no fountain, no aura");
 	}
 
 	#[test]

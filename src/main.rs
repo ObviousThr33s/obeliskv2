@@ -31,7 +31,6 @@ const WALL:   Color = Color::Rgb { r: 0,   g: 90,  b: 0 };   // standing stone
 const GROUND: Color = Color::Rgb { r: 0,   g: 30,  b: 0 };   // the dark between
 const STATUS: Color = Color::Rgb { r: 0,   g: 150, b: 0 };   // the line at the foot
 const WISP:   Color = Color::Rgb { r: 120, g: 220, b: 230 }; // the fountain's heart
-const POOL:   Color = Color::Rgb { r: 0,   g: 70,  b: 80 };  // safe ground, a cool glow
 
 fn main() -> io::Result<()> {
 	let mut world = build_world();
@@ -93,9 +92,9 @@ fn draw(out: &mut impl Write, world: &World) -> io::Result<()> {
 				x: player.x + i32::from(sx) - cx,
 				y: player.y + i32::from(sy) - cy,
 			};
-			let safe = world.is_safe(here);
+			let aura = world.aura_at(here);
 				let (glyph, colour) =
-					cell(here, player, &remembered, &world.field, safe, fountain == Some(here));
+					cell(here, player, &remembered, &world.field, aura, fountain == Some(here));
 			queue!(
 				out,
 				cursor::MoveTo(sx, sy),
@@ -135,7 +134,7 @@ fn cell(
 	player: Pos,
 	remembered: &Option<Sighting>,
 	field: &Field,
-	safe: bool,
+	aura: f32,
 	fountain: bool,
 ) -> (char, Color) {
 	if here == player {
@@ -160,10 +159,25 @@ fn cell(
 			return ('#', WALL);
 		}
 	}
-	if safe {
-		return ('∘', POOL); // still water lit by wisps — the gaze may rest here
+	if aura > 0.0 {
+		return ('∘', aura_tone(aura)); // the fountain's pall — its glow is its strength
 	}
 	('·', GROUND)
+}
+
+/// The aura's tone at a given strength: up from the dark ground, through
+/// wisp-green, to the cyan heart — the two colours the coupling toy settled on.
+/// The same number the world reads for safety; here it becomes light.
+fn aura_tone(strength: f32) -> Color {
+	let s = strength.clamp(0.0, 1.0);
+	let lerp = |a: u8, b: u8, t: f32| (f32::from(a) + (f32::from(b) - f32::from(a)) * t) as u8;
+	if s >= 0.5 {
+		let t = (s - 0.5) * 2.0;
+		Color::Rgb { r: lerp(143, 120, t), g: lerp(208, 220, t), b: lerp(160, 230, t) }
+	} else {
+		let t = s * 2.0;
+		Color::Rgb { r: lerp(0, 143, t), g: lerp(30, 208, t), b: lerp(0, 160, t) }
+	}
 }
 
 /// Put the terminal into raw, full-screen mode and hand back a guard whose `Drop`
