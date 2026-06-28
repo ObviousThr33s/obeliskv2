@@ -41,7 +41,8 @@ fn main() -> io::Result<()> {
 	let start = Instant::now();
 
 	loop {
-		draw(&mut out, &world, breath_at(start.elapsed()))?;
+		let now = start.elapsed();
+		draw(&mut out, &world, breath_at(now), time_pulse(now))?;
 		// Poll, so the fountain can breathe between keystrokes rather than blocking on input.
 		if !event::poll(Duration::from_millis(90))? {
 			continue;
@@ -79,7 +80,7 @@ fn build_world() -> World {
 
 /// Paint one frame: the field centred on the player, the moth drawn only from
 /// memory — amber where seen now, a fading green where she was last glimpsed.
-fn draw(out: &mut impl Write, world: &World, breath: f32) -> io::Result<()> {
+fn draw(out: &mut impl Write, world: &World, breath: f32, pulse: char) -> io::Result<()> {
 	let (cols, rows) = terminal::size()?;
 	let view_rows = rows.saturating_sub(2).max(1); // foot of the screen is the status
 	let cx = i32::from(cols) / 2;
@@ -121,6 +122,9 @@ fn draw(out: &mut impl Write, world: &World, breath: f32) -> io::Result<()> {
 		out,
 		cursor::MoveTo(0, view_rows),
 		terminal::Clear(ClearType::CurrentLine),
+		SetForegroundColor(WISP),
+		Print(pulse),
+		Print("  "),
 		SetForegroundColor(STATUS),
 		Print(format!(
 			"facing {facing}    move ↑/w   turn ←/→   wait space   quit q",
@@ -197,6 +201,16 @@ fn aura_tone(strength: f32) -> Color {
 fn breath_at(elapsed: Duration) -> f32 {
 	let t = elapsed.as_secs_f32();
 	0.78 + 0.22 * (t * 0.9).sin()
+}
+
+/// A simple, numberless sign that time is passing: a small glyph that waxes and
+/// wanes on a steady real-time beat. Cycling = time flows as it should; frozen or
+/// stuttering = time is doing something else.
+fn time_pulse(elapsed: Duration) -> char {
+	let frames = ['·', '∘', '○', '∘'];
+	let step = elapsed.as_millis() / 350 % frames.len() as u128;
+	let i = usize::try_from(step).unwrap_or(0);
+	frames.get(i).copied().unwrap_or('·')
 }
 
 /// Put the terminal into raw, full-screen mode and hand back a guard whose `Drop`
