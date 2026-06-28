@@ -1,4 +1,4 @@
-use crate::entity::EntityId;
+use crate::world::entity::EntityId;
 
 /// What travels the bus. Per the engine wards (see `CLAUDE.md`): a payload
 /// carries values and [`EntityId`]s only — never a reference, lifetime, or heap

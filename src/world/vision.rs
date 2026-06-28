@@ -16,7 +16,7 @@
 /// the viewer and the target themselves.
 ///
 /// ```
-/// use obelisk::vision::can_see;
+/// use obelisk::world::vision::can_see;
 /// use std::f32::consts::PI;
 ///
 /// assert!( can_see((0, 0), 0.0, PI / 3.0, 20.0, (5, 0), |_, _| false));

@@ -23,10 +23,10 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
-use obelisk::entity::Pos;
-use obelisk::lore::Lore;
+use obelisk::world::entity::Pos;
+use obelisk::content::lore::Lore;
 use obelisk::render::{self, Frame};
-use obelisk::terrain;
+use obelisk::world::terrain;
 use obelisk::world::{Intent, World};
 
 /// How many cells the window shows, and how many pixels make a cell. A cell is a
@@ -66,7 +66,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 /// The same small world the terminal build raises: the player among grown stone
 /// masses, the moth a little way off, the fountain its sanctuary. Story baked in.
 fn build_world() -> World {
-	let lore = Lore::parse(include_str!("../../lore/voice.txt"));
+	let lore = Lore::parse(include_str!("../../assets/lore/voice.txt"));
 	let mut world = World::new(Pos { x: 20, y: 12 }, Pos { x: 25, y: 12 })
 		.voiced(lore)
 		.with_sanctuary(Pos { x: 16, y: 12 }, 2);

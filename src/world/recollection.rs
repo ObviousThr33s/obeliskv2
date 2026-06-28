@@ -1,6 +1,6 @@
 //! The watcher's memory of what it has seen — vision accumulated over time.
 //!
-//! [`crate::vision::can_see`] answers "is she visible right now?" This answers
+//! [`crate::world::vision::can_see`] answers "is she visible right now?" This answers
 //! the gentler question the map needs: "where do I last remember her, and how
 //! clearly?"
 //!
@@ -10,7 +10,7 @@
 //! tick until it is gone.
 
 use std::collections::{HashMap, HashSet};
-use crate::entity::EntityId;
+use crate::world::entity::EntityId;
 
 /// One remembered sighting: a glyph at the place it was last seen, and how
 /// clear that memory still is. `clarity` starts at `1.0` and fades toward `0.0`.

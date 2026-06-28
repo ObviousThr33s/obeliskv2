@@ -1,4 +1,4 @@
-use crate::event::Event;
+use crate::world::event::Event;
 
 /// A fixed-capacity ring buffer of [`Event`]s — the engine's event bus.
 ///

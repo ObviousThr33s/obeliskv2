@@ -20,9 +20,9 @@
 
 use std::time::Duration;
 
-use crate::entity::{Heading, Pos, Priority, PLAYER};
-use crate::field::Field;
-use crate::recollection::Sighting;
+use crate::world::entity::{Heading, Pos, Priority, PLAYER};
+use crate::world::field::Field;
+use crate::world::recollection::Sighting;
 use crate::world::{World, MOTH};
 
 /// A colour, eight bits a channel. Plain data, no references (ward 1 in spirit):
@@ -300,7 +300,7 @@ fn as_i32(n: usize) -> i32 {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::entity::Pos;
+	use crate::world::entity::Pos;
 	use crate::world::Intent;
 
 	/// Read a frame row back into a string — test-only, so allocation is free here.

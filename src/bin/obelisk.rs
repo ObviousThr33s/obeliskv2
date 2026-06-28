@@ -19,10 +19,10 @@ use crossterm::{
 	terminal,
 };
 
-use obelisk::entity::Pos;
-use obelisk::lore::Lore;
+use obelisk::world::entity::Pos;
+use obelisk::content::lore::Lore;
 use obelisk::render::{self, Cell, Frame};
-use obelisk::terrain;
+use obelisk::world::terrain;
 use obelisk::world::{Intent, World};
 
 /// The terminal's viewport, in cells. A const-generic frame is sized at compile
@@ -69,7 +69,7 @@ fn main() -> io::Result<()> {
 /// Build a small world: the player in a scattered field of standing stones, the
 /// moth a little way off. The story comes from `lore/voice.txt`, baked in at build.
 fn build_world() -> World {
-	let lore = Lore::parse(include_str!("../lore/voice.txt"));
+	let lore = Lore::parse(include_str!("../../assets/lore/voice.txt"));
 	let mut world = World::new(Pos { x: 20, y: 12 }, Pos { x: 25, y: 12 })
 		.voiced(lore)
 		.with_sanctuary(Pos { x: 16, y: 12 }, 2);

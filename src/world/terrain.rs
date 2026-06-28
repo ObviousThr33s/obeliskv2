@@ -3,8 +3,8 @@
 //! at the player's expense. Whatever already stands (the player, any beings,
 //! walls placed earlier) is never built over.
 
-use crate::entity::{Entity, Pos, Priority};
-use crate::field::Field;
+use crate::world::entity::{Entity, Pos, Priority};
+use crate::world::field::Field;
 
 /// A small deterministic pseudo-random source — xorshift64\*. Pure and
 /// allocation-free, so generation honours the engine's no-heap ethos and stays
@@ -145,7 +145,7 @@ pub fn scatter_walls(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::entity::PLAYER;
+	use crate::world::entity::PLAYER;
 	use std::collections::BTreeSet;
 
 	fn layout(field: &Field) -> BTreeSet<(i32, i32, char)> {

@@ -1,13 +1,23 @@
-//! The world and its tick — three phases per press (see `CLAUDE.md`).
+//! The world and its tick — three phases per press (see `CLAUDE.md`). This is the
+//! mechanism trunk (`world/mod.rs`); its submodules are the event bus and everything
+//! placed in the field.
+
+pub mod entity;
+pub mod event;
+pub mod field;
+pub mod haps;
+pub mod recollection;
+pub mod vision;
+pub mod terrain;
 
 use std::collections::HashSet;
-use crate::entity::{Entity, EntityId, Heading, Priority, Pos, PLAYER};
-use crate::event::Event;
-use crate::field::Field;
-use crate::haps::Haps;
-use crate::lore::Lore;
-use crate::recollection::Recollection;
-use crate::vision::can_see;
+use crate::world::entity::{Entity, EntityId, Heading, Priority, Pos, PLAYER};
+use crate::world::event::Event;
+use crate::world::field::Field;
+use crate::world::haps::Haps;
+use crate::content::lore::Lore;
+use crate::world::recollection::Recollection;
+use crate::world::vision::can_see;
 
 pub const MOTH: EntityId = 1;
 

@@ -1,7 +1,7 @@
 //! The spatial container: entities indexed by id and by position.
 
 use std::collections::HashMap;
-use crate::entity::{Entity, EntityId, Pos};
+use crate::world::entity::{Entity, EntityId, Pos};
 
 /// A 2D field of placed entities — the world's spatial truth.
 pub struct Field {
@@ -69,7 +69,7 @@ impl Default for Field {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::entity::{Priority, PLAYER};
+	use crate::world::entity::{Priority, PLAYER};
 
 	fn player(pos: Pos) -> Entity { Entity::new(0, pos, '@', Priority::High) }
 	fn wall(id: EntityId, pos: Pos) -> Entity { Entity::new(id, pos, '#', Priority::Low) }
