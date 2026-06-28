@@ -74,7 +74,8 @@ fn build_world() -> World {
 	let mut world = World::new(Pos { x: 20, y: 12 }, Pos { x: 25, y: 12 })
 		.voiced(lore)
 		.with_sanctuary(Pos { x: 16, y: 12 }, 2);
-	terrain::scatter_walls(&mut world.field, 0xB0A7, 40, 24, 70);
+	// Stone grown as value-noise masses, not scattered grit — clumps and clearings.
+	terrain::grow_masses(&mut world.field, 0xB0A7, 40, 24, 0.4);
 	world
 }
 
