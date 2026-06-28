@@ -7,6 +7,7 @@
 //! quit `q`. The world is the library; this file is only input and ink.
 
 use std::io::{self, Write};
+use std::time::{Duration, Instant};
 
 use crossterm::{
 	cursor,
@@ -34,11 +35,17 @@ const WISP:   Color = Color::Rgb { r: 120, g: 220, b: 230 }; // the fountain's h
 
 fn main() -> io::Result<()> {
 	let mut world = build_world();
+	world.tick(Intent::Wait); // prime sight, so the moth shows on the very first frame
 	let _guard = enter_terminal()?; // restores the terminal on the way out, even on error
 	let mut out = io::stdout();
+	let start = Instant::now();
 
 	loop {
-		draw(&mut out, &world)?;
+		draw(&mut out, &world, breath_at(start.elapsed()))?;
+		// Poll, so the fountain can breathe between keystrokes rather than blocking on input.
+		if !event::poll(Duration::from_millis(90))? {
+			continue;
+		}
 		if let Event::Key(key) = event::read()? {
 			// Windows consoles report both press and release — act on press only,
 			// so one keystroke is one tick.
@@ -63,7 +70,7 @@ fn main() -> io::Result<()> {
 /// moth a little way off. The story comes from `lore/voice.txt`, baked in at build.
 fn build_world() -> World {
 	let lore = Lore::parse(include_str!("../lore/voice.txt"));
-	let mut world = World::new(Pos { x: 20, y: 12 }, Pos { x: 28, y: 9 })
+	let mut world = World::new(Pos { x: 20, y: 12 }, Pos { x: 25, y: 12 })
 		.voiced(lore)
 		.with_sanctuary(Pos { x: 16, y: 12 }, 2);
 	terrain::scatter_walls(&mut world.field, 0xB0A7, 40, 24, 70);
@@ -72,7 +79,7 @@ fn build_world() -> World {
 
 /// Paint one frame: the field centred on the player, the moth drawn only from
 /// memory — amber where seen now, a fading green where she was last glimpsed.
-fn draw(out: &mut impl Write, world: &World) -> io::Result<()> {
+fn draw(out: &mut impl Write, world: &World, breath: f32) -> io::Result<()> {
 	let (cols, rows) = terminal::size()?;
 	let view_rows = rows.saturating_sub(2).max(1); // foot of the screen is the status
 	let cx = i32::from(cols) / 2;
@@ -85,16 +92,16 @@ fn draw(out: &mut impl Write, world: &World) -> io::Result<()> {
 	let remembered = world.recollection.recall(MOTH).copied();
 	let fountain = world.sanctuary().map(|(c, _)| c);
 
-	queue!(out, terminal::Clear(ClearType::All))?;
 	for sy in 0..view_rows {
 		for sx in 0..cols {
 			let here = Pos {
 				x: player.x + i32::from(sx) - cx,
 				y: player.y + i32::from(sy) - cy,
 			};
-			let aura = world.aura_at(here);
-				let (glyph, colour) =
-					cell(here, player, &remembered, &world.field, aura, fountain == Some(here));
+			// The world's true aura, breathed for the eye only — safety never flickers.
+			let aura = world.aura_at(here) * breath;
+			let (glyph, colour) =
+				cell(here, player, &remembered, &world.field, aura, fountain == Some(here));
 			queue!(
 				out,
 				cursor::MoveTo(sx, sy),
@@ -113,13 +120,17 @@ fn draw(out: &mut impl Write, world: &World) -> io::Result<()> {
 	queue!(
 		out,
 		cursor::MoveTo(0, view_rows),
+		terminal::Clear(ClearType::CurrentLine),
 		SetForegroundColor(STATUS),
 		Print(format!(
 			"facing {facing}    move ↑/w   turn ←/→   wait space   quit q",
 		)),
 	)?;
+	// Wipe the spoken line each frame, then voice it only if the world spoke — so a
+	// line that has passed does not linger now that no full clear sweeps the screen.
+	queue!(out, cursor::MoveTo(0, view_rows + 1), terminal::Clear(ClearType::CurrentLine))?;
 	if let Some(line) = &world.spoken {
-		queue!(out, cursor::MoveTo(0, view_rows + 1), SetForegroundColor(AMBER), Print(line))?;
+		queue!(out, SetForegroundColor(AMBER), Print(line))?;
 	}
 
 	queue!(out, ResetColor)?;
@@ -178,6 +189,14 @@ fn aura_tone(strength: f32) -> Color {
 		let t = s * 2.0;
 		Color::Rgb { r: lerp(0, 143, t), g: lerp(30, 208, t), b: lerp(0, 160, t) }
 	}
+}
+
+/// The fountain's slow breath — a gentle rise and fall to multiply the aura's glow
+/// by, so its pall fades in and out within its radius. Render-only: the world's
+/// true aura, and the safety it grants, never flicker.
+fn breath_at(elapsed: Duration) -> f32 {
+	let t = elapsed.as_secs_f32();
+	0.78 + 0.22 * (t * 0.9).sin()
 }
 
 /// Put the terminal into raw, full-screen mode and hand back a guard whose `Drop`
