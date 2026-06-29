@@ -239,6 +239,24 @@ fn paint_status<const W: usize, const H: usize>(
 
 	if let Some(line) = &world.spoken {
 		put_str(frame, 0, spoken_row, line, palette::AMBER);
+	} else if let Some(moth) = world.watcher(MOTH) {
+		// No words this tick: show the moth's vigor as a row of beads — whole beads for
+		// the vigor she holds, dimmed for what the breath has drained. It fills and empties
+		// as she fades into the wisp and is reborn, so the stat interaction is on screen,
+		// not just on the bus. Beads are drawn one cell at a time — no formatting, no
+		// allocation in the render path (ward 2).
+		let col = put_str(frame, 0, spoken_row, &moth.name, palette::WISP);
+		let mut c = col + 1;
+		for i in 0..moth.vigor.max(0) {
+			let whole = i < moth.health;
+			if let Some(slot) = frame.get_mut(c, spoken_row) {
+				*slot = Cell {
+					glyph: if whole { '○' } else { '·' },
+					ink:   if whole { palette::WISP } else { palette::GROUND },
+				};
+			}
+			c += 1;
+		}
 	}
 }
 
@@ -392,6 +410,18 @@ mod tests {
 		render(&w, &mut frame, Duration::ZERO);
 		let cell = frame.at(7, 3).expect("the fairy's cell is in view");
 		assert_eq!(cell.glyph, 'F', "the fairy is drawn where she stands");
+	}
+
+	#[test]
+	fn the_moths_vigor_shows_as_beads_when_the_world_is_silent() {
+		// With no lore the world says nothing, so the spoken row instead carries the moth's
+		// vigor as beads — born whole, she shows a full row of them.
+		let w = World::new(Pos { x: 0, y: 0 }, Pos { x: 40, y: 40 }); // voiceless → silent
+		let mut frame = Frame::<30, 6>::blank(); // play 30x4, spoken row at y=5
+		render(&w, &mut frame, Duration::ZERO);
+		let whole = row_text(&frame, 5).chars().filter(|&c| c == '○').count();
+		let vigor = w.watcher(MOTH).expect("the moth carries stats").vigor;
+		assert_eq!(whole as i32, vigor, "a whole moth shows one bead per point of vigor");
 	}
 
 	#[test]

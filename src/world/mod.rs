@@ -106,7 +106,7 @@ impl World {
 		field.reserve_past(MOTH); // generation mints past the principals, never over them
 		// The moth is a watcher too, so she breathes by her own astuteness like the rest.
 		let mut watchers = BTreeMap::new();
-		watchers.insert(MOTH, watcher::Watcher { name: "the moth".to_string(), health: 8, power: 6 });
+		watchers.insert(MOTH, watcher::Watcher { name: "the moth".to_string(), health: 8, vigor: 8, power: 6 });
 		World {
 			field,
 			facing: Heading::East,
@@ -278,12 +278,17 @@ impl World {
 			if strength > 0.0 {
 				let astute = self.watchers.get(&id).map_or(1.0, watcher::Watcher::astuteness);
 				let progress = self.breath.get(&id).copied().unwrap_or(0);
-				let beat = if progress + 1 >= breath_span(strength * astute) {
-					Event::Reborn { id }
+				if progress + 1 >= breath_span(strength * astute) {
+					// Reborn from the fountain: mended whole. The clamp lives in
+					// `Watcher::toll`, so a full mend is just "+vigor" — overshoot is honest.
+					let vigor = self.watchers.get(&id).map_or(0, |w| w.vigor);
+					let _ = self.haps.push(Event::Reborn { id });
+					let _ = self.haps.push(Event::Toll { id, delta: vigor });
 				} else {
-					Event::Fade { id }
-				};
-				let _ = self.haps.push(beat);
+					// One tick deeper into the wisp drains a point of vigor.
+					let _ = self.haps.push(Event::Fade { id });
+					let _ = self.haps.push(Event::Toll { id, delta: -1 });
+				}
 			} else {
 				let target = self.sanctuary.map_or(pp, |s| s.center);
 				let step = wp.step_toward(target);
@@ -316,6 +321,13 @@ impl World {
 					// Re-emerge from the fountain; the breath begins again.
 					self.breath.insert(id, 0);
 					self.emerge_from_fountain(id);
+				}
+				Event::Toll { id, delta } => {
+					// The one place a stat moves: a queued change lands on her vigor,
+					// clamped honest. Mutation only, as the ward demands.
+					if let Some(w) = self.watchers.get_mut(&id) {
+						w.toll(delta);
+					}
 				}
 				_ => {}
 			}
@@ -587,6 +599,47 @@ mod tests {
 			}
 		}
 		assert!(fairy_breathed, "the fairy is drawn into the pall and breathes, like the moth");
+	}
+
+	#[test]
+	fn fading_into_the_fountain_drains_her_vigor_then_rebirth_mends_it() {
+		// The stat interaction, carried entirely on the bus: unwatched in the pall she
+		// fades — each fade tolls a point of vigor — and when she is reborn from the rim
+		// the toll restores her whole. Health dips below her vigor, then returns to it.
+		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 6, y: 0 })
+			.with_sanctuary(Pos { x: 0, y: 0 }, 3);
+		let vigor = w.watcher(MOTH).expect("the moth carries stats").vigor;
+		w.tick(Intent::TurnRight); // face south; the moth, due east, stays unwatched
+
+		let mut dipped = false;
+		let mut mended_after_dip = false;
+		for _ in 0..60 {
+			w.tick(Intent::Wait);
+			let health = w.watcher(MOTH).expect("the moth carries stats").health;
+			assert!(health >= 0 && health <= vigor, "vigor stays within 0..=vigor at all times");
+			if health < vigor {
+				dipped = true; // a fade has tolled her below whole
+			}
+			if dipped && health == vigor {
+				mended_after_dip = true; // a rebirth has mended her back to full
+				break;
+			}
+		}
+		assert!(dipped, "fading into the wisp drains her vigor");
+		assert!(mended_after_dip, "reborn from the fountain, she is mended whole");
+	}
+
+	#[test]
+	fn a_watched_watcher_is_never_tolled() {
+		// Stats move only by the breath, and the breath only turns when she is unwatched.
+		// Hold the moth in the gaze and her vigor never stirs.
+		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 5, y: 0 })
+			.with_sanctuary(Pos { x: 0, y: 0 }, 3);
+		let before = w.watcher(MOTH).expect("stats").health;
+		for _ in 0..10 {
+			w.tick(Intent::Wait); // facing east, she is dead ahead and watched throughout
+		}
+		assert_eq!(w.watcher(MOTH).expect("stats").health, before, "under the gaze, her vigor holds");
 	}
 
 	#[test]

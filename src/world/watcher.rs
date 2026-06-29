@@ -6,11 +6,32 @@
 //! expense" ethos, as in [`crate::world::terrain`]).
 
 /// A watcher's data: a name and simple stats. Generated now; file-loaded later.
+///
+/// `health` is her current vigor and *moves at runtime* — drained as she fades into
+/// the fountain, mended when she is reborn from it (the stat interaction carried on the
+/// bus, see [`Event::Toll`](crate::world::event::Event::Toll)). `vigor` is the ceiling
+/// that mending restores her to: her whole, un-drained self.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Watcher {
 	pub name:   String,
 	pub health: i32,
+	pub vigor:  i32,
 	pub power:  i32,
+}
+
+impl Watcher {
+	/// Apply a stat change and keep it honest: health stays within `0..=vigor`, so a
+	/// drain can never run her below nothing nor a mend lift her past her whole self.
+	/// The toll arrives as a plain `delta` off the bus; this is where it lands.
+	pub fn toll(&mut self, delta: i32) {
+		self.health = (self.health + delta).clamp(0, self.vigor);
+	}
+
+	/// Whether the gaze has drained her to nothing this breath — spent, for now only an
+	/// observable fact (no death mechanic yet); a hook for later interactions.
+	pub fn is_spent(&self) -> bool {
+		self.health <= 0
+	}
 }
 
 impl Watcher {
@@ -32,10 +53,12 @@ impl Watcher {
 			let i = (next() % parts.len() as u64) as usize;
 			name.push_str(parts.get(i).copied().unwrap_or("oo"));
 		}
+		let health = 5 + (next() % 11) as i32; // 5..=15
 		Watcher {
 			name:   capitalise(&name),
-			health: 5 + (next() % 11) as i32, // 5..=15
-			power:  3 + (next() % 9) as i32,  // 3..=11
+			health,
+			vigor: health, // born whole — the ceiling a mend restores her to
+			power: 3 + (next() % 9) as i32, // 3..=11
 		}
 	}
 
@@ -74,8 +97,25 @@ mod tests {
 
 	#[test]
 	fn more_power_means_more_astuteness() {
-		let weak = Watcher { name: "a".to_string(), health: 1, power: 2 };
-		let strong = Watcher { name: "b".to_string(), health: 1, power: 10 };
+		let weak = Watcher { name: "a".to_string(), health: 1, vigor: 1, power: 2 };
+		let strong = Watcher { name: "b".to_string(), health: 1, vigor: 1, power: 10 };
 		assert!(strong.astuteness() > weak.astuteness(), "greater power, greater astuteness");
+	}
+
+	#[test]
+	fn a_generated_watcher_is_born_whole() {
+		let w = Watcher::random(0x51A7);
+		assert_eq!(w.health, w.vigor, "her current vigor is her whole self at birth");
+	}
+
+	#[test]
+	fn a_toll_never_runs_past_zero_or_her_whole_self() {
+		let mut w = Watcher { name: "n".to_string(), health: 3, vigor: 5, power: 4 };
+		w.toll(-10);
+		assert_eq!(w.health, 0, "a drain bottoms out at nothing, never below");
+		assert!(w.is_spent(), "drained to nothing, she is spent");
+		w.toll(100);
+		assert_eq!(w.health, 5, "a mend tops out at her vigor, never above");
+		assert!(!w.is_spent(), "mended, she is whole again");
 	}
 }

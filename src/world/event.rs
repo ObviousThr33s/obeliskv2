@@ -18,4 +18,8 @@ pub enum Event {
 	Fade { id: EntityId },
 	/// A fully-faded being re-emerges at her seed — the breath's inhale.
 	Reborn { id: EntityId },
+	/// A being's vigor changes by `delta` — drained as she fades, mended when reborn.
+	/// The change travels as a plain value, never a handle to her stats (ward 1), so
+	/// the event stays `Copy` and the mutation lands only in phase 3.
+	Toll { id: EntityId, delta: i32 },
 }
