@@ -4,9 +4,8 @@
 
 //! Obelisk — the lens. The unified product: a real window showing the game panel
 //! *and* the status/spoken text together, both drawn from the one shared
-//! [`render::render`] the terminal build uses. Where [`obelisk`] (the terminal) is
-//! the reference view and `pane` is the smallest honest CPU-floor slice, this is
-//! the destination — where glyphs and the rest of the experience land.
+//! [`render::render`] the terminal build uses — the same world [`obelisk`] (the
+//! terminal) shows, here in owned pixels with baked glyphs.
 //!
 //! It carries a **heartbeat**: a render clock beats a gentle redraw so the
 //! fountain's aura breathes between keystrokes, exactly as the terminal does. Two
