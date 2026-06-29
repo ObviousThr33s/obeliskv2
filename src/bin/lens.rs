@@ -115,7 +115,7 @@ impl ApplicationHandler for Lens {
 			return; // already raised; a second resume changes nothing
 		}
 		let attrs = Window::default_attributes()
-			.with_title("Obelisk — the lens")
+			.with_title(concat!("Obelisk — the lens  v", env!("CARGO_PKG_VERSION")))
 			.with_inner_size(LogicalSize::new(as_u32(VIEW_W * CELL), as_u32(VIEW_H * CELL)));
 
 		let window = match event_loop.create_window(attrs) {
