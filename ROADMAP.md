@@ -31,7 +31,7 @@ line crossed, `[ ]` one still open.
 
 ## Phase A — finish the Lens (the v3.1 line)
 
-- [ ] **A0 — one truth (the renderer unification).** Lift the rich projection (camera,
+- [x] **A0 — one truth (the renderer unification).** Lift the rich projection (camera,
   breathing aura, moth-from-memory, status rows) out of `src/main.rs` into shared
   `render` passes, so the terminal and the window consume one `Frame`. (Finish line:
   a test shows both renderers produce the *same* `Frame` from the same world — and at
@@ -46,9 +46,8 @@ line crossed, `[ ]` one still open.
   - [x] baked glyph atlas — hero glyphs (`@ # m ∘ ○ ·`) drawn in
     `assets/glyphs/atlas.txt` (8x8, our own pixels, **no font file**), stamped by `lens`
     (commit `1f2f1b5`). A full ASCII set for the status rows is the next slice.
-  - [ ] status text legible in the window — the **field** now reads as glyphs; the
-    status/spoken **letters** still fall back to solid blocks until a status font is
-    baked. The terminal shows the text in full already.
+  - [x] status text legible in the window — `font8x8` (pure Rust, no `.ttf`) baked into
+    the atlas (commit `4314ee5`) so the window's HUD reads as letters, not blocks.
   - [x] **the window grows a heartbeat** — `breath_at`/`time_pulse` live in shared
     `render(…, elapsed)`, and the new `lens` bin beats a redraw from `about_to_wait`
     (`ControlFlow::WaitUntil`), so its aura breathes between keystrokes like the

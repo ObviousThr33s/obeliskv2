@@ -118,6 +118,9 @@ mod tests {
 		// The exact shape pasted from Gemini — the empty `"rgb":` breaks strict JSON,
 		// but the hex is intact, so a tolerant parse must still succeed. This is the
 		// whole point: read messy real data without choking.
+		
+		//this test is written like shit for a very specific reason, portability, macro use for an inline like this might be a good option... anyways --Obvious.
+		
 		let raw = r##"{
   "palette_name": "Sunset Arcade",
   "colors": {
