@@ -1,0 +1,22 @@
+{
+  "palette_name": "Golden Hour Haven",
+  "style": "80s Warm Earth Tone Nostalgia",
+  "colors": {
+    "honey_oak": {
+      "hex": "#C08552",
+      "role": "Mid-tone structural elements or warm ambient background tint"
+    },
+    "toffee_amber": {
+      "hex": "#995F2F",
+      "role": "Shadow depths, secondary text indicators, or deep panel fills"
+    },
+    "peach_fuzz": {
+      "hex": "#F3E4C9",
+      "role": "Dreamy workspace background, screen glow mask, or soft text"
+    },
+    "soft_taupe": {
+      "hex": "#A98B76",
+      "role": "Neutral housing, inactive buttons, or scanline shading mask"
+    }
+  }
+}

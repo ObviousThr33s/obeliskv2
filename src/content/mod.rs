@@ -6,3 +6,5 @@
 //! Nothing is read from disk at runtime.
 
 pub mod lore;
+pub mod palette;
+pub mod glsl;

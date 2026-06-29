@@ -1,0 +1,22 @@
+{
+  "palette_name": "Sunset Arcade",
+  "style": "Romantic 1980s Retro-Analog",
+  "colors": {
+    "deep_walnut": {
+      "hex": "#4B2E2B",
+      "role": "Background, woodgrain base, or heavy chassis bezel"
+    },
+    "sunburst_amber": {
+      "hex": "#FF9D23",
+      "role": "Primary active text, glowing indicators, or phosphor simulation"
+    },
+    "faded_rose": {
+      "hex": "#EC8F8D",
+      "role": "Subtle UI details, chromatic aberration highlights, or soft borders"
+    },
+    "creamy_ivory": {
+      "hex": "#FFF8F0",
+      "role": "Warm static overlays, glare simulation, or brightest highlights"
+    }
+  }
+}
