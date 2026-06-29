@@ -14,4 +14,8 @@ pub enum Event {
 	/// A being has passed out of a gaze that was holding it — the watcher loses
 	/// her. Named by id only, so the event stays `Copy` and reference-free (ward 1).
 	Lost { id: EntityId },
+	/// A being is dissolving into the fountain's wisp — one tick of the breath's fade.
+	Fade { id: EntityId },
+	/// A fully-faded being re-emerges at her seed — the breath's inhale.
+	Reborn { id: EntityId },
 }

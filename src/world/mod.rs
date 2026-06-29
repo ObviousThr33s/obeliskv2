@@ -28,6 +28,10 @@ pub const FAIRY: EntityId = 2;
 /// Clarity the watcher's memory of an unseen being loses each tick.
 const FADE: f32 = 0.25;
 
+/// How many ticks an unwatched being takes to fully fade into the fountain before she
+/// is reborn — the length of one breath.
+const BREATH_SPAN: u32 = 4;
+
 /// The player's field of view — a 90° cone. Wide enough to feel watchful,
 /// narrow enough that turning away truly looks away.
 const SIGHT_FOV: f32 = std::f32::consts::FRAC_PI_2;
@@ -78,6 +82,10 @@ pub struct World {
 	haps:             Haps,
 	/// The data half (name, stats) of the watchers placed in the world, keyed by id.
 	watchers:         HashMap<EntityId, watcher::Watcher>,
+	/// How far the moth has faded into the fountain this breath (0 = whole, fully present).
+	breath:           u32,
+	/// Where the moth re-emerges when reborn — her birthplace.
+	moth_seed:        Pos,
 }
 
 impl World {
@@ -97,6 +105,8 @@ impl World {
 			sanctuary: None,
 			haps: Haps::new(),
 			watchers: HashMap::new(),
+			breath: 0,
+			moth_seed: moth_pos,
 		}
 	}
 
@@ -190,14 +200,25 @@ impl World {
 		if !sees_moth && self.watching && !self.is_safe(pp) {
 			let _ = self.haps.push(Event::Lost { id: MOTH });
 		}
-		// Unwatched, the moth comes to the light — one step toward the player. But not
-		// within the safe spot, where the gaze may rest and nothing creeps.
-		// Decided here from this tick's snapshot; applied below in the mutation phase.
-		if !sees_moth && !self.is_safe(pp) {
-			let step = mp.step_toward(pp);
-			let (dx, dy) = (step.x - mp.x, step.y - mp.y);
-			if (dx, dy) != (0, 0) {
-				let _ = self.haps.push(Event::Crept { id: MOTH, dx, dy });
+		// Unwatched, the moth is drawn to the light — toward the fountain's wisp if there
+		// is one (there she fades and is reborn: the breath), else toward the player.
+		// Decided from this tick's snapshot; applied below in the mutation phase.
+		if !sees_moth {
+			if self.is_safe(mp) {
+				// Home in the pall: one tick of the fade, or rebirth once fully faded.
+				let beat = if self.breath + 1 >= BREATH_SPAN {
+					Event::Reborn { id: MOTH }
+				} else {
+					Event::Fade { id: MOTH }
+				};
+				let _ = self.haps.push(beat);
+			} else {
+				let target = self.sanctuary.map_or(pp, |s| s.center);
+				let step = mp.step_toward(target);
+				let (dx, dy) = (step.x - mp.x, step.y - mp.y);
+				if (dx, dy) != (0, 0) {
+					let _ = self.haps.push(Event::Crept { id: MOTH, dx, dy });
+				}
 			}
 		}
 
@@ -215,6 +236,16 @@ impl World {
 				}
 				Event::Crept { id, dx, dy } => {
 					self.field.move_entity(id, dx, dy);
+				}
+				Event::Fade { id } if id == MOTH => {
+					self.breath = self.breath.saturating_add(1);
+				}
+				Event::Reborn { id } if id == MOTH => {
+					// Re-emerge at her seed; the breath begins again.
+					self.breath = 0;
+					if let Some(cur) = self.field.get(MOTH).map(|m| m.pos) {
+						self.field.move_entity(MOTH, self.moth_seed.x - cur.x, self.moth_seed.y - cur.y);
+					}
 				}
 				_ => {}
 			}
@@ -384,28 +415,30 @@ mod tests {
 	}
 
 	#[test]
-	fn in_the_safe_spot_the_gaze_may_rest_and_nothing_creeps() {
-		// The player rests at a fountain; the moth sits five cells east, in view.
-		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 5, y: 0 })
+	fn unwatched_the_moth_is_drawn_toward_the_fountain() {
+		// A fountain at the origin, the player on its heart, the moth east. Look away and
+		// she is drawn toward the wisp — a step nearer the heart (the breath, evolved from
+		// the old "she comes to the player").
+		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 6, y: 0 })
 			.with_sanctuary(Pos { x: 0, y: 0 }, 2);
 		w.tick(Intent::Wait);      // watched, she holds
-		w.tick(Intent::TurnRight); // look away — outside a sanctuary she would creep
+		w.tick(Intent::TurnRight); // look away — drawn toward the fountain's wisp
 		assert_eq!(
 			w.field.get(MOTH).unwrap().pos, Pos { x: 5, y: 0 },
-			"within the safe spot, nothing follows when the eye turns away",
+			"unwatched, she steps toward the fountain",
 		);
 	}
 
 	#[test]
-	fn the_safe_spot_keeps_only_its_own_ground() {
-		// A sanctuary exists, but the player stands well beyond its reach.
+	fn beyond_the_pall_she_is_drawn_to_the_fountain_not_the_player() {
+		// A fountain at the origin; the player and moth stand far off, beyond its reach.
 		let mut w = World::new(Pos { x: 20, y: 20 }, Pos { x: 25, y: 20 })
 			.with_sanctuary(Pos { x: 0, y: 0 }, 2);
-		w.tick(Intent::Wait);
-		w.tick(Intent::TurnRight); // look away, far from safety — she creeps
+		w.tick(Intent::Wait);      // watched, she holds
+		w.tick(Intent::TurnRight); // look away — drawn toward the distant fountain
 		assert_eq!(
-			w.field.get(MOTH).unwrap().pos, Pos { x: 24, y: 20 },
-			"beyond the safe spot, looking away still draws her on",
+			w.field.get(MOTH).unwrap().pos, Pos { x: 24, y: 19 },
+			"she steps toward the fountain at the origin, not the player beside her",
 		);
 	}
 
@@ -432,5 +465,30 @@ mod tests {
 		w.tick(Intent::Wait);      // held and watched
 		w.tick(Intent::TurnRight); // turn away — she is right there, not lost
 		assert_eq!(w.spoken, None, "in the safe spot, turning away parts from nothing");
+	}
+
+	#[test]
+	fn unwatched_the_moth_breathes_into_the_fountain_and_is_reborn() {
+		// The breath, as one cycle: player on the heart of a wide fountain, the moth
+		// seeded outside its pall. Hold the gaze aside and she drifts in, fades over the
+		// breath, then is reborn at her seed — all driven by events on the bus.
+		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 6, y: 0 })
+			.with_sanctuary(Pos { x: 0, y: 0 }, 3); // pall reaches ~3 cells; the seed (6,0) is outside
+		w.tick(Intent::TurnRight); // face south; the moth, due east, stays unwatched throughout
+		let mut entered = false;
+		let mut reborn = false;
+		for _ in 0..40 {
+			w.tick(Intent::Wait);
+			let mp = w.field.get(MOTH).expect("the moth is in the world").pos;
+			if w.is_safe(mp) {
+				entered = true;
+			}
+			if entered && mp == (Pos { x: 6, y: 0 }) {
+				reborn = true;
+				break;
+			}
+		}
+		assert!(entered, "she is drawn into the fountain's pall");
+		assert!(reborn, "and once fully faded, she is reborn at her seed");
 	}
 }
