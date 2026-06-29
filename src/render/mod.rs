@@ -385,6 +385,16 @@ mod tests {
 	}
 
 	#[test]
+	fn the_fairy_appears_in_the_view() {
+		let w = World::new(Pos { x: 0, y: 0 }, Pos { x: 40, y: 40 })
+			.with_fairy(Pos { x: 1, y: 0 }, 0xFA12);
+		let mut frame = Frame::<13, 9>::blank(); // centre (6, 3); the fairy at (1, 0) → (7, 3)
+		render(&w, &mut frame, Duration::ZERO);
+		let cell = frame.at(7, 3).expect("the fairy's cell is in view");
+		assert_eq!(cell.glyph, 'F', "the fairy is drawn where she stands");
+	}
+
+	#[test]
 	fn clearing_returns_the_grid_to_unlit_ground() {
 		let w = World::new(Pos { x: 0, y: 0 }, Pos { x: 40, y: 40 });
 		let mut frame = Frame::<5, 5>::blank();

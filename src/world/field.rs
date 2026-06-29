@@ -25,6 +25,15 @@ impl Field {
 		id
 	}
 
+	/// Bump the id source so freshly minted ids start *past* `id` — keeps hand-assigned
+	/// ids (the player, the moth, the fairy) from ever being reused by a later [`mint`],
+	/// which would silently overwrite them. Call after placing known entities.
+	///
+	/// [`mint`]: Self::mint
+	pub fn reserve_past(&mut self, id: EntityId) {
+		self.next_id = self.next_id.max(id.saturating_add(1));
+	}
+
 	pub fn add(&mut self, entity: Entity) {
 		let key = (entity.pos.x, entity.pos.y);
 		let id  = entity.id;

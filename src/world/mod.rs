@@ -9,8 +9,9 @@ pub mod haps;
 pub mod recollection;
 pub mod vision;
 pub mod terrain;
+pub mod watcher;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use crate::world::entity::{Entity, EntityId, Heading, Priority, Pos, PLAYER};
 use crate::world::event::Event;
 use crate::world::field::Field;
@@ -20,6 +21,9 @@ use crate::world::recollection::Recollection;
 use crate::world::vision::can_see;
 
 pub const MOTH: EntityId = 1;
+
+/// The fairy — a visible watcher with a generated name and stats.
+pub const FAIRY: EntityId = 2;
 
 /// Clarity the watcher's memory of an unseen being loses each tick.
 const FADE: f32 = 0.25;
@@ -72,6 +76,8 @@ pub struct World {
 	/// The safe spot, if this world has one — see [`Sanctuary`].
 	sanctuary:        Option<Sanctuary>,
 	haps:             Haps,
+	/// The data half (name, stats) of the watchers placed in the world, keyed by id.
+	watchers:         HashMap<EntityId, watcher::Watcher>,
 }
 
 impl World {
@@ -79,6 +85,7 @@ impl World {
 		let mut field = Field::new();
 		field.add(Entity::new(PLAYER, player_pos, '@', Priority::High));
 		field.add(Entity::new(MOTH,   moth_pos,   'm', Priority::Med));
+		field.reserve_past(MOTH); // generation mints past the principals, never over them
 		World {
 			field,
 			facing: Heading::East,
@@ -89,6 +96,7 @@ impl World {
 			spoken: None,
 			sanctuary: None,
 			haps: Haps::new(),
+			watchers: HashMap::new(),
 		}
 	}
 
@@ -104,6 +112,21 @@ impl World {
 	pub fn with_sanctuary(mut self, center: Pos, radius: i32) -> Self {
 		self.sanctuary = Some(Sanctuary { center, radius });
 		self
+	}
+
+	/// Place a fairy — a visible watcher with a generated name and stats — at `pos`,
+	/// grown from `seed`. Builder-style, like [`voiced`](World::voiced). Added before
+	/// terrain grows, so she is an anchor it never walls in.
+	pub fn with_fairy(mut self, pos: Pos, seed: u64) -> Self {
+		self.field.add(Entity::new(FAIRY, pos, 'F', Priority::Med));
+		self.field.reserve_past(FAIRY);
+		self.watchers.insert(FAIRY, watcher::Watcher::random(seed));
+		self
+	}
+
+	/// The data (name, stats) of a watcher placed in the world, if any.
+	pub fn watcher(&self, id: EntityId) -> Option<&watcher::Watcher> {
+		self.watchers.get(&id)
 	}
 
 	/// Whether `pos` lies within the safe spot — anywhere the aura still has
@@ -234,6 +257,16 @@ impl World {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn the_fairy_stands_in_the_world_named_and_visible() {
+		let w = World::new(Pos { x: 0, y: 0 }, Pos { x: 9, y: 9 })
+			.with_fairy(Pos { x: 3, y: 3 }, 0xFA12);
+		let f = w.field.at(Pos { x: 3, y: 3 }).expect("the fairy stands where placed");
+		assert_eq!((f.id, f.glyph), (FAIRY, 'F'), "she appears as F");
+		let data = w.watcher(FAIRY).expect("the fairy carries data");
+		assert!(!data.name.is_empty() && data.health > 0, "named, with living stats");
+	}
 
 	#[test]
 	fn turning_then_stepping_forward_moves_the_way_you_face() {

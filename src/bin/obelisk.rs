@@ -72,7 +72,8 @@ fn build_world() -> World {
 	let lore = Lore::parse(include_str!("../../assets/lore/voice.txt"));
 	let mut world = World::new(Pos { x: 20, y: 12 }, Pos { x: 25, y: 12 })
 		.voiced(lore)
-		.with_sanctuary(Pos { x: 16, y: 12 }, 2);
+		.with_sanctuary(Pos { x: 16, y: 12 }, 2)
+		.with_fairy(Pos { x: 22, y: 9 }, 0xFA12);
 	// Stone grown as value-noise masses, not scattered grit — clumps and clearings.
 	terrain::grow_masses(&mut world.field, 0xB0A7, 40, 24, 0.4);
 	world
