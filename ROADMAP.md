@@ -38,16 +38,17 @@ line crossed, `[ ]` one still open.
   the same phase of the same breath.) See [memory: renderer-unification].
   - [x] composite projection in `render` — ground → aura → memory → player, ordered
     in `project_cell` (Model A: one grid, ordered resolution). *Note:* done as per-cell
-    resolution, not named passes; splitting into blended z-layers waits for A3, where
-    `Cell` gains a blend channel — a widening then, not a rewrite.
+    resolution, not named passes; splitting into blended z-layers waits for the
+    polygon/light-field work, where `Cell` gains a blend channel — a widening, not a rewrite.
   - [x] status line + spoken lore as the **bottom rows of the same grid** — no side
     text payload (`paint_status` writes glyphs straight into cells; the terminal blits
     the whole frame, status rows and all)
-  - [ ] baked glyph atlas — hero glyphs (`@ # m ∘ ○ ·`) + a small ASCII set, `const`
-    pixel data, **no font file** (see [docs/distribution.md](docs/distribution.md))
-  - [ ] the window draws the full grid **+ text rows** *legibly* — the frame already
-    carries both; the window paints them as solid blocks until the glyph atlas lands,
-    so the text rows aren't readable there yet (the terminal shows them in full now)
+  - [x] baked glyph atlas — hero glyphs (`@ # m ∘ ○ ·`) drawn in
+    `assets/glyphs/atlas.txt` (8x8, our own pixels, **no font file**), stamped by `lens`
+    (commit `1f2f1b5`). A full ASCII set for the status rows is the next slice.
+  - [ ] status text legible in the window — the **field** now reads as glyphs; the
+    status/spoken **letters** still fall back to solid blocks until a status font is
+    baked. The terminal shows the text in full already.
   - [x] **the window grows a heartbeat** — `breath_at`/`time_pulse` live in shared
     `render(…, elapsed)`, and the new `lens` bin beats a redraw from `about_to_wait`
     (`ControlFlow::WaitUntil`), so its aura breathes between keystrokes like the

@@ -11,6 +11,11 @@ crossterm = "0.27"
 winit = "0.30"
 softbuffer = "0.4"
 
+# A public-domain 8x8 bitmap font, pure Rust — no .ttf shipped. Baked in for the
+# window's HUD text; our own atlas (assets/glyphs/atlas.txt) overrides it for the
+# hero marks (∘ ○ ·) and the arrows. Keeps the single self-contained exe.
+font8x8 = "0.3"
+
 # Engineering standard — see STYLE.md for the rationale and the Shall/Will/Should
 # tiers. Almost everything sits at `warn` (the build stays green) and ratchets to
 # `deny` as the code is cleaned. Clippy lints fire under `cargo clippy`.
