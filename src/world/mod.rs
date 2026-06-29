@@ -40,6 +40,25 @@ fn breath_span(strength: f32) -> u32 {
 	(span.round() as u32).max(1)
 }
 
+/// A gentle wander step for an unwatched watcher: `-1`, `0`, or `+1`, drawn from her
+/// `id` and the current `ticks`. Deterministic — same world, same tick, same flutter —
+/// so the wander is reproducible and never random at the player's expense. Zero about
+/// half the time, so she drifts more than she darts.
+fn flutter(id: EntityId, ticks: u64) -> i32 {
+	// xorshift64*, the same pure generator terrain and watcher names use, over a mix of
+	// id and tick. Kept local: a small, honest source of motion, not a global RNG.
+	let mut s = (u64::from(id).wrapping_mul(0x9E37_79B9_7F4A_7C15)) ^ ticks.wrapping_add(0x1234_5678);
+	s |= 1; // 0 is a fixed point of xorshift; nudge it as the watcher generator does
+	s ^= s >> 12;
+	s ^= s << 25;
+	s ^= s >> 27;
+	match s.wrapping_mul(0x2545_F491_4F6C_DD1D) % 4 {
+		0 => -1,
+		1 => 1,
+		_ => 0,
+	}
+}
+
 /// The player's field of view — a 90° cone. Wide enough to feel watchful,
 /// narrow enough that turning away truly looks away.
 const SIGHT_FOV: f32 = std::f32::consts::FRAC_PI_2;
@@ -96,6 +115,9 @@ pub struct World {
 	/// How far each watcher has faded into the fountain this breath (0 = fully present),
 	/// keyed by id — every watcher breathes her own cycle.
 	breath:           BTreeMap<EntityId, u32>,
+	/// World-time, counted in ticks. Seeds each watcher's wander so her flutter is
+	/// reproducible — same world, same ticks, same path (never random at your expense).
+	ticks:            u64,
 }
 
 impl World {
@@ -119,6 +141,7 @@ impl World {
 			haps: Haps::new(),
 			watchers,
 			breath: BTreeMap::new(),
+			ticks: 0,
 		}
 	}
 
@@ -290,9 +313,23 @@ impl World {
 					let _ = self.haps.push(Event::Toll { id, delta: -1 });
 				}
 			} else {
-				let target = self.sanctuary.map_or(pp, |s| s.center);
+				// Unwatched and out in the open: drawn toward her target by temperament
+				// (the fairy stalks you; the moth is drawn to the wisp), with a gentle wander
+				// laid on whichever axis the pull leaves slack — a sidestep, never a backstep,
+				// so the flutter never costs her progress. The fluttered cell is taken only if
+				// it is open; otherwise she keeps the straight pull. Decided here from the
+				// snapshot; the move itself lands in phase 3.
+				let target = self.pull_target(id, pp);
 				let step = wp.step_toward(target);
-				let (dx, dy) = (step.x - wp.x, step.y - wp.y);
+				let (mut dx, mut dy) = (step.x - wp.x, step.y - wp.y);
+				let side = flutter(id, self.ticks);
+				if side != 0 {
+					let (fx, fy) = if dx == 0 { (side, dy) } else if dy == 0 { (dx, side) } else { (dx, dy) };
+					if self.field.at(Pos { x: wp.x + fx, y: wp.y + fy }).is_none() {
+						dx = fx;
+						dy = fy;
+					}
+				}
 				if (dx, dy) != (0, 0) {
 					let _ = self.haps.push(Event::Crept { id, dx, dy });
 				}
@@ -345,6 +382,20 @@ impl World {
 		self.recollection.fade_unseen(&seen_now);
 		// Remember whether she stood in view this tick, to catch the loss next tick.
 		self.watching = sees_moth;
+		// World-time advances by one. Read next tick to seed each watcher's wander.
+		self.ticks = self.ticks.wrapping_add(1);
+	}
+
+	/// Where an unwatched watcher out in the open is drawn — her temperament. The fairy
+	/// *stalks the player*: she creeps up the moment your gaze leaves her. Every other
+	/// watcher (the moth) is the shy one, drawn to the fountain's wisp, or to the player
+	/// when there is no fountain to seek.
+	fn pull_target(&self, id: EntityId, player: Pos) -> Pos {
+		if id == FAIRY {
+			player
+		} else {
+			self.sanctuary.map_or(player, |s| s.center)
+		}
 	}
 
 	/// Whether the player, from `from` and facing [`facing`](World::facing), can
@@ -411,13 +462,14 @@ mod tests {
 			w.field.get(MOTH).unwrap().pos, Pos { x: 5, y: 0 },
 			"under your gaze, she holds perfectly still",
 		);
-		// Turn to face South — the moth, due east, leaves the cone. Now unwatched,
-		// she takes one step toward you: she comes to the light.
+		// Turn to face South — the moth, due east, leaves the cone. Now unwatched, she
+		// takes one step toward you: she comes to the light. The pull is horizontal (she is
+		// due east), so she advances exactly one cell west; a wander may add at most a single
+		// cell of vertical flutter, never a backstep.
 		w.tick(Intent::TurnRight);
-		assert_eq!(
-			w.field.get(MOTH).unwrap().pos, Pos { x: 4, y: 0 },
-			"unwatched, she creeps one cell toward the light",
-		);
+		let p = w.field.get(MOTH).unwrap().pos;
+		assert_eq!(p.x, 4, "unwatched, she creeps one cell toward the light");
+		assert!(p.y.abs() <= 1, "with at most a cell of wander to the side");
 	}
 
 	#[test]
@@ -513,10 +565,9 @@ mod tests {
 			.with_sanctuary(Pos { x: 0, y: 0 }, 2);
 		w.tick(Intent::Wait);      // watched, she holds
 		w.tick(Intent::TurnRight); // look away — drawn toward the fountain's wisp
-		assert_eq!(
-			w.field.get(MOTH).unwrap().pos, Pos { x: 5, y: 0 },
-			"unwatched, she steps toward the fountain",
-		);
+		let p = w.field.get(MOTH).unwrap().pos;
+		assert_eq!(p.x, 5, "unwatched, she steps one cell toward the fountain");
+		assert!(p.y.abs() <= 1, "with at most a cell of wander to the side");
 	}
 
 	#[test]
@@ -580,6 +631,41 @@ mod tests {
 		}
 		assert!(entered, "she is drawn into the fountain's pall");
 		assert!(re_emerged, "and once faded, she re-emerges from the fountain's rim");
+	}
+
+	#[test]
+	fn the_fairy_stalks_the_player_while_the_moth_seeks_the_wisp() {
+		// Distinct temperaments. Put the player and the fountain on opposite sides of the
+		// fairy: the player to her west, the fountain to her east. Look away, and she steps
+		// *west* — toward you, not toward the wisp — proving the fairy's pull is the player.
+		let mut w = World::new(Pos { x: 10, y: 10 }, Pos { x: 40, y: 40 }) // the moth far off
+			.with_sanctuary(Pos { x: 20, y: 10 }, 2)     // fountain east of the fairy
+			.with_fairy(Pos { x: 14, y: 10 }, 0xFA12);   // fairy between player (west) and fountain (east)
+		w.tick(Intent::TurnRight); // face south; the fairy, due east, is unwatched
+		let p = w.field.get(FAIRY).expect("the fairy stands in the world").pos;
+		assert_eq!(p.x, 13, "unwatched, she stalks one cell west — toward the player, not the wisp");
+	}
+
+	#[test]
+	fn the_wander_is_reproducible_same_world_same_path() {
+		// The flutter is seeded from id and tick, never truly random — so two identical
+		// worlds, ticked the same, end with every watcher on the very same cell.
+		let make = || World::new(Pos { x: 0, y: 0 }, Pos { x: 5, y: 2 })
+			.with_fairy(Pos { x: 3, y: 4 }, 0x51A7);
+		let mut a = make();
+		let mut b = make();
+		for _ in 0..20 {
+			a.tick(Intent::TurnRight);
+			b.tick(Intent::TurnRight);
+		}
+		assert_eq!(
+			a.field.get(MOTH).unwrap().pos, b.field.get(MOTH).unwrap().pos,
+			"the moth walks the very same wander twice",
+		);
+		assert_eq!(
+			a.field.get(FAIRY).unwrap().pos, b.field.get(FAIRY).unwrap().pos,
+			"and so does the fairy",
+		);
 	}
 
 	#[test]
