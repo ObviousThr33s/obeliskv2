@@ -28,9 +28,17 @@ pub const FAIRY: EntityId = 2;
 /// Clarity the watcher's memory of an unseen being loses each tick.
 const FADE: f32 = 0.25;
 
-/// How many ticks an unwatched being takes to fully fade into the fountain before she
-/// is reborn — the length of one breath.
-const BREATH_SPAN: u32 = 4;
+/// The longest a breath takes — at the faint edge of a pall. Stronger magic (a deeper
+/// aura) shortens it, so the breath's tempo is governed by the area, not a flat clock.
+const BREATH_BASE: f32 = 6.0;
+
+/// How many ticks a being takes to fade, given the aura `strength` where she rests
+/// (`0.0` at the pall's edge, `1.0` at the heart). Deeper in the pall — greater magical
+/// astuteness — the faster she fades: the time-stick is shared by the pall's aura.
+fn breath_span(strength: f32) -> u32 {
+	let span = BREATH_BASE * (1.0 - strength.clamp(0.0, 1.0));
+	(span.round() as u32).max(1)
+}
 
 /// The player's field of view — a 90° cone. Wide enough to feel watchful,
 /// narrow enough that turning away truly looks away.
@@ -206,7 +214,7 @@ impl World {
 		if !sees_moth {
 			if self.is_safe(mp) {
 				// Home in the pall: one tick of the fade, or rebirth once fully faded.
-				let beat = if self.breath + 1 >= BREATH_SPAN {
+				let beat = if self.breath + 1 >= breath_span(self.aura_at(mp)) {
 					Event::Reborn { id: MOTH }
 				} else {
 					Event::Fade { id: MOTH }
@@ -490,5 +498,15 @@ mod tests {
 		}
 		assert!(entered, "she is drawn into the fountain's pall");
 		assert!(reborn, "and once fully faded, she is reborn at her seed");
+	}
+
+	#[test]
+	fn the_breath_quickens_where_the_magic_is_stronger() {
+		// The time-stick shared by the pall's astuteness: a deeper aura fades her faster.
+		assert!(
+			breath_span(0.9) < breath_span(0.1),
+			"stronger magic shortens the breath",
+		);
+		assert!(breath_span(1.0) >= 1, "even at the heart, a breath takes at least a tick");
 	}
 }
