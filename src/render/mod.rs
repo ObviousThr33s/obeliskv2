@@ -25,6 +25,9 @@ use crate::world::field::Field;
 use crate::world::recollection::Sighting;
 use crate::world::{World, MOTH};
 
+/// The baked glyph atlas — our own pixels the windowed build stamps per cell.
+pub mod atlas;
+
 /// A colour, eight bits a channel. Plain data, no references (ward 1 in spirit):
 /// a cell carries the colour itself, not a handle to one.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

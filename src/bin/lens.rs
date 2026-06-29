@@ -1,3 +1,7 @@
+// Hide the console for the windowed build so a double-clicked exe shows only the
+// window; kept under `cargo test` so test output still has somewhere to go.
+#![cfg_attr(not(test), windows_subsystem = "windows")]
+
 //! Obelisk — the lens. The unified product: a real window showing the game panel
 //! *and* the status/spoken text together, both drawn from the one shared
 //! [`render::render`] the terminal build uses. Where [`obelisk`] (the terminal) is
@@ -26,6 +30,7 @@ use winit::window::{Window, WindowId};
 use obelisk::world::entity::Pos;
 use obelisk::content::lore::Lore;
 use obelisk::render::{self, Frame};
+use obelisk::render::atlas::Atlas;
 use obelisk::world::terrain;
 use obelisk::world::{Intent, World};
 
@@ -60,6 +65,7 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 		world,
 		frame: Box::new(Frame::blank()),
 		start: Instant::now(),
+		atlas: Atlas::baked(),
 		window: None,
 		context: None,
 		surface: None,
@@ -86,6 +92,8 @@ struct Lens {
 	/// The render clock — render-time, never world-time. The breath and time-pulse
 	/// read `start.elapsed()`; the world only moves on a keystroke.
 	start:   Instant,
+	/// The baked glyph atlas, parsed once at startup and stamped per cell.
+	atlas:   Atlas,
 	window:  Option<Rc<Window>>,
 	context: Option<Context<Rc<Window>>>,
 	surface: Option<Surface<Rc<Window>, Rc<Window>>>,
@@ -208,38 +216,56 @@ impl Lens {
 			Ok(buffer) => buffer,
 			Err(_) => return,
 		};
-		rasterise(&self.frame, size.width as usize, size.height as usize, &mut buffer);
+		rasterise(&self.frame, &self.atlas, size.width as usize, size.height as usize, &mut buffer);
 		let _ = buffer.present();
 	}
 }
 
-/// Turn the cell grid into lit pixels. Each pixel asks which cell it falls in and
-/// takes that cell's ink; pixels past the painted grid fall through to [`VOID`],
-/// so any window size letterboxes onto void ground rather than reading off the end.
+/// Turn the cell grid into lit pixels, stamping each cell's glyph from the atlas.
+/// A pixel asks which cell it falls in, then which glyph-pixel it covers (the cell
+/// is `CELL`/`GLYPH_W` times the glyph's size). A lit glyph-pixel takes the cell's
+/// ink; everything else is [`VOID`], so the field reads as shapes on dark ground.
 ///
-/// No allocation, no raw indexing (ward 2, the safe subset): the buffer is written
-/// in place and every access is bounds-checked. Glyphs are not yet drawn — each cell
-/// is a solid block of its ink — so the status text reads as colour, not letters,
-/// until the glyph atlas lands.
+/// A blank cell is bare void; a glyph the atlas doesn't carry yet (e.g. status
+/// letters) falls back to a solid block, so it still reads. No allocation, no raw
+/// indexing (ward 2, the safe subset): every access is bounds-checked.
 ///
 /// [`VOID`]: render::palette::VOID
 fn rasterise<const W: usize, const H: usize>(
 	frame:  &Frame<W, H>,
+	atlas:  &Atlas,
 	width:  usize,
 	height: usize,
 	pixels: &mut [u32],
 ) {
+	let scale = (CELL / render::atlas::GLYPH_W).max(1);
+	let void = pack(render::palette::VOID);
 	for py in 0..height {
 		let cy = py / CELL;
+		let gy = (py % CELL) / scale;
 		let row = py * width;
 		for px in 0..width {
-			let ink = frame.at(px / CELL, cy).map_or(render::palette::VOID, |cell| cell.ink);
-			let lit = (u32::from(ink.r) << 16) | (u32::from(ink.g) << 8) | u32::from(ink.b);
+			let cell = frame.at(px / CELL, cy);
+			let glyph = cell.map_or(' ', |c| c.glyph);
+			let lit = if glyph == ' ' {
+				false // bare ground: the void shows through
+			} else if let Some(bm) = atlas.glyph(glyph) {
+				let gx = (px % CELL) / scale;
+				bm.get(gy).is_some_and(|&bits| bits & (0x80u8 >> gx) != 0)
+			} else {
+				true // a glyph not yet drawn: a solid block, so it still reads
+			};
+			let color = if lit { cell.map_or(void, |c| pack(c.ink)) } else { void };
 			if let Some(slot) = pixels.get_mut(row + px) {
-				*slot = lit;
+				*slot = color;
 			}
 		}
 	}
+}
+
+/// Pack an [`render::Rgb`] into the `0x00RRGGBB` word softbuffer presents.
+fn pack(ink: render::Rgb) -> u32 {
+	(u32::from(ink.r) << 16) | (u32::from(ink.g) << 8) | u32::from(ink.b)
 }
 
 /// A small size, widened for winit, without a lossy cast or a panic. The grid is
