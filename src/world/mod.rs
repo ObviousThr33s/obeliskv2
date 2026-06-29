@@ -93,10 +93,9 @@ pub struct World {
 	haps:             Haps,
 	/// The data half (name, stats) of the watchers placed in the world, keyed by id.
 	watchers:         HashMap<EntityId, watcher::Watcher>,
-	/// How far the moth has faded into the fountain this breath (0 = whole, fully present).
-	breath:           u32,
-	/// Where the moth re-emerges when reborn — her birthplace.
-	moth_seed:        Pos,
+	/// How far each watcher has faded into the fountain this breath (0 = fully present),
+	/// keyed by id — every watcher breathes her own cycle.
+	breath:           HashMap<EntityId, u32>,
 }
 
 impl World {
@@ -105,6 +104,9 @@ impl World {
 		field.add(Entity::new(PLAYER, player_pos, '@', Priority::High));
 		field.add(Entity::new(MOTH,   moth_pos,   'm', Priority::Med));
 		field.reserve_past(MOTH); // generation mints past the principals, never over them
+		// The moth is a watcher too, so she breathes by her own astuteness like the rest.
+		let mut watchers = HashMap::new();
+		watchers.insert(MOTH, watcher::Watcher { name: "the moth".to_string(), health: 8, power: 6 });
 		World {
 			field,
 			facing: Heading::East,
@@ -115,9 +117,8 @@ impl World {
 			spoken: None,
 			sanctuary: None,
 			haps: Haps::new(),
-			watchers: HashMap::new(),
-			breath: 0,
-			moth_seed: moth_pos,
+			watchers,
+			breath: HashMap::new(),
 		}
 	}
 
@@ -178,6 +179,49 @@ impl World {
 		self.sanctuary.map(|s| (s.center, s.radius))
 	}
 
+	/// Re-emerge a faded watcher from the fountain — at a clear cell just outside its
+	/// pall, so she drifts back inward and the breath repeats. No fountain, no change.
+	fn emerge_from_fountain(&mut self, id: EntityId) {
+		let Some(s) = self.sanctuary else {
+			return;
+		};
+		let Some(cur) = self.field.get(id).map(|e| e.pos) else {
+			return;
+		};
+		let r = s.radius + 1;
+		for (dx, dy) in [(r, 0), (-r, 0), (0, r), (0, -r)] {
+			let to = Pos { x: s.center.x + dx, y: s.center.y + dy };
+			if to == cur || self.field.at(to).is_none() {
+				self.field.move_entity(id, to.x - cur.x, to.y - cur.y);
+				return;
+			}
+		}
+	}
+
+	/// Hallow the fountain's ground: clear any stone within the pall and its rim, so a
+	/// watcher can drift through and re-emerge — the fountain made safe. Call after
+	/// terrain has grown; the principals (player, watchers) are never touched.
+	pub fn hallow_sanctuary(&mut self) {
+		let Some(s) = self.sanctuary else {
+			return;
+		};
+		let r = s.radius + 1;
+		let stones: Vec<EntityId> = self
+			.field
+			.entities
+			.values()
+			.filter(|e| {
+				e.priority == Priority::Low
+					&& (e.pos.x - s.center.x).abs() <= r
+					&& (e.pos.y - s.center.y).abs() <= r
+			})
+			.map(|e| e.id)
+			.collect();
+		for id in stones {
+			self.field.remove(id);
+		}
+	}
+
 	/// One press, one tick — three phases. The player's [`Intent`] drives phase 1;
 	/// the world reacts in phases 2 and 3.
 	pub fn tick(&mut self, intent: Intent) {
@@ -217,24 +261,35 @@ impl World {
 		if !sees_moth && self.watching && !self.is_safe(pp) {
 			let _ = self.haps.push(Event::Lost { id: MOTH });
 		}
-		// Unwatched, the moth is drawn to the light — toward the fountain's wisp if there
-		// is one (there she fades and is reborn: the breath), else toward the player.
-		// Decided from this tick's snapshot; applied below in the mutation phase.
-		if !sees_moth {
-			if self.is_safe(mp) {
-				// Home in the pall: one tick of the fade, or rebirth once fully faded.
-				let beat = if self.breath + 1 >= breath_span(self.aura_at(mp)) {
-					Event::Reborn { id: MOTH }
+		// Every watcher, unwatched, is drawn to the fountain and breathes there: in the
+		// pall she fades — faster where the aura is strong and her astuteness great — and
+		// is reborn; outside it she drifts toward the wisp (or the player, with no fountain).
+		// Decided from this snapshot; applied in the mutation phase.
+		let breathers: Vec<EntityId> = self.watchers.keys().copied().collect();
+		for id in breathers {
+			let wp = match self.field.get(id) {
+				Some(e) => e.pos,
+				None    => continue,
+			};
+			if self.sees(pp, wp) {
+				continue; // watched: she holds (observer-collapse)
+			}
+			let strength = self.aura_at(wp);
+			if strength > 0.0 {
+				let astute = self.watchers.get(&id).map_or(1.0, watcher::Watcher::astuteness);
+				let progress = self.breath.get(&id).copied().unwrap_or(0);
+				let beat = if progress + 1 >= breath_span(strength * astute) {
+					Event::Reborn { id }
 				} else {
-					Event::Fade { id: MOTH }
+					Event::Fade { id }
 				};
 				let _ = self.haps.push(beat);
 			} else {
 				let target = self.sanctuary.map_or(pp, |s| s.center);
-				let step = mp.step_toward(target);
-				let (dx, dy) = (step.x - mp.x, step.y - mp.y);
+				let step = wp.step_toward(target);
+				let (dx, dy) = (step.x - wp.x, step.y - wp.y);
 				if (dx, dy) != (0, 0) {
-					let _ = self.haps.push(Event::Crept { id: MOTH, dx, dy });
+					let _ = self.haps.push(Event::Crept { id, dx, dy });
 				}
 			}
 		}
@@ -254,15 +309,13 @@ impl World {
 				Event::Crept { id, dx, dy } => {
 					self.field.move_entity(id, dx, dy);
 				}
-				Event::Fade { id } if id == MOTH => {
-					self.breath = self.breath.saturating_add(1);
+				Event::Fade { id } => {
+					*self.breath.entry(id).or_insert(0) += 1;
 				}
-				Event::Reborn { id } if id == MOTH => {
-					// Re-emerge at her seed; the breath begins again.
-					self.breath = 0;
-					if let Some(cur) = self.field.get(MOTH).map(|m| m.pos) {
-						self.field.move_entity(MOTH, self.moth_seed.x - cur.x, self.moth_seed.y - cur.y);
-					}
+				Event::Reborn { id } => {
+					// Re-emerge from the fountain; the breath begins again.
+					self.breath.insert(id, 0);
+					self.emerge_from_fountain(id);
 				}
 				_ => {}
 			}
@@ -493,28 +546,47 @@ mod tests {
 	}
 
 	#[test]
-	fn unwatched_the_moth_breathes_into_the_fountain_and_is_reborn() {
-		// The breath, as one cycle: player on the heart of a wide fountain, the moth
-		// seeded outside its pall. Hold the gaze aside and she drifts in, fades over the
-		// breath, then is reborn at her seed — all driven by events on the bus.
+	fn unwatched_a_watcher_breathes_into_the_fountain_and_re_emerges() {
+		// One breath: player on the heart of a wide fountain, the moth east and outside
+		// the pall. Hold the gaze aside and she drifts in, fades, then re-emerges from the
+		// fountain's rim (radius + 1) — all driven by events on the bus.
 		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 6, y: 0 })
-			.with_sanctuary(Pos { x: 0, y: 0 }, 3); // pall reaches ~3 cells; the seed (6,0) is outside
+			.with_sanctuary(Pos { x: 0, y: 0 }, 3);
 		w.tick(Intent::TurnRight); // face south; the moth, due east, stays unwatched throughout
 		let mut entered = false;
-		let mut reborn = false;
+		let mut re_emerged = false;
 		for _ in 0..40 {
 			w.tick(Intent::Wait);
 			let mp = w.field.get(MOTH).expect("the moth is in the world").pos;
 			if w.is_safe(mp) {
 				entered = true;
 			}
-			if entered && mp == (Pos { x: 6, y: 0 }) {
-				reborn = true;
+			if entered && mp == (Pos { x: 4, y: 0 }) {
+				re_emerged = true; // reborn at the rim, having faded inside
 				break;
 			}
 		}
 		assert!(entered, "she is drawn into the fountain's pall");
-		assert!(reborn, "and once fully faded, she is reborn at her seed");
+		assert!(re_emerged, "and once faded, she re-emerges from the fountain's rim");
+	}
+
+	#[test]
+	fn the_breath_is_shared_by_all_watchers_not_only_the_moth() {
+		// The fairy, in a pall and unwatched, is drawn in and breathes too.
+		let mut w = World::new(Pos { x: 0, y: 0 }, Pos { x: 40, y: 40 }) // the moth far off
+			.with_sanctuary(Pos { x: 0, y: 0 }, 3)
+			.with_fairy(Pos { x: 6, y: 0 }, 0xFA12); // the fairy east, outside the pall
+		w.tick(Intent::TurnRight); // face south; the fairy (due east) is unwatched
+		let mut fairy_breathed = false;
+		for _ in 0..40 {
+			w.tick(Intent::Wait);
+			let fp = w.field.get(FAIRY).expect("the fairy stands in the world").pos;
+			if w.is_safe(fp) {
+				fairy_breathed = true;
+				break;
+			}
+		}
+		assert!(fairy_breathed, "the fairy is drawn into the pall and breathes, like the moth");
 	}
 
 	#[test]

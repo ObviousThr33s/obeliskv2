@@ -81,6 +81,7 @@ fn build_world() -> World {
 		.with_sanctuary(Pos { x: 16, y: 12 }, 2)
 		.with_fairy(Pos { x: 22, y: 9 }, 0xFA12);
 	terrain::grow_masses(&mut world.field, 0xB0A7, 40, 24, 0.4);
+	world.hallow_sanctuary(); // clear the fountain's ground so the breath can run there
 	world
 }
 

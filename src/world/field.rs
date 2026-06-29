@@ -65,6 +65,14 @@ impl Field {
 		self.entities.get(&id)
 	}
 
+	/// Remove entity `id`, returning it if it was there. Keeps the spatial index in
+	/// step — used to hallow the fountain's ground (clear stone from the pall).
+	pub fn remove(&mut self, id: EntityId) -> Option<Entity> {
+		let entity = self.entities.remove(&id)?;
+		self.spatial_index.remove(&(entity.pos.x, entity.pos.y));
+		Some(entity)
+	}
+
 	pub fn at(&self, pos: Pos) -> Option<&Entity> {
 		self.spatial_index.get(&(pos.x, pos.y))
 			.and_then(|id| self.entities.get(id))

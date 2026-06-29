@@ -77,6 +77,7 @@ fn build_world() -> World {
 		.with_fairy(Pos { x: 22, y: 9 }, 0xFA12);
 	// Stone grown as value-noise masses, not scattered grit — clumps and clearings.
 	terrain::grow_masses(&mut world.field, 0xB0A7, 40, 24, 0.4);
+	world.hallow_sanctuary(); // clear the fountain's ground so the breath can run there
 	world
 }
 

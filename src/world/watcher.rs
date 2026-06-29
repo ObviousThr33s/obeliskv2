@@ -38,6 +38,12 @@ impl Watcher {
 			power:  3 + (next() % 9) as i32,  // 3..=11
 		}
 	}
+
+	/// A factor (~0.1..1.5) for how potent her magic is — it scales the breath: the
+	/// greater her astuteness, the faster she fades into a pall.
+	pub fn astuteness(&self) -> f32 {
+		(self.power as f32 / 10.0).clamp(0.1, 1.5)
+	}
 }
 
 /// First letter upper, the rest unchanged; an empty name takes a gentle default.
@@ -64,5 +70,12 @@ mod tests {
 		assert!(!w.name.is_empty(), "she is named");
 		assert!(w.name.starts_with(|c: char| c.is_uppercase()), "named with a capital");
 		assert!(w.health > 0 && w.power > 0, "alive, with some strength");
+	}
+
+	#[test]
+	fn more_power_means_more_astuteness() {
+		let weak = Watcher { name: "a".to_string(), health: 1, power: 2 };
+		let strong = Watcher { name: "b".to_string(), health: 1, power: 10 };
+		assert!(strong.astuteness() > weak.astuteness(), "greater power, greater astuteness");
 	}
 }
