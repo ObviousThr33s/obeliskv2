@@ -59,10 +59,15 @@ line crossed, `[ ]` one still open.
   top-down does.)
 - [ ] **A2 — the avatar with its own mind.** `intent.bend()` — the player *influences* a
   disposition, not a puppet ([memory: avatar-intent-seed]). Headless-testable first.
-- [ ] **A3 — color/phase as a channel.** "Color is faster than refresh" — encode state in
-  hue/phase (the interference work), the cheap fast channel. Fold into both views.
+- [ ] **Polygons — scene geometry.** *(Replaces the dropped A3 colour/phase channel — that
+  hue/phase math left with the Aetherium.)* Describe the scene as polygons that deposit into
+  the renderer — porting v1's `light.rs` polygon fill. Lives in `src/render/polygons`.
 
 ## Phase B — stand up the Aetherium spine
+
+> **Moved out.** Phases B, C, and D are the **Aetherium**, now a *separate project*
+> ([docs/aetherium-spinoff.md](docs/aetherium-spinoff.md)). They leave this roadmap and are
+> kept below only as a pointer. v2 is the **Lens** (Phase A) plus the **polygon** work.
 
 - [ ] **B1 — the 3-tier skeleton.** Go ingest → Zig SIMD math → Rust graph, joined by
   **zero-copy FFI** over flat shared memory. No serialization.
