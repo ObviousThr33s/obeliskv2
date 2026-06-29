@@ -19,6 +19,14 @@ font8x8 = "0.3"
 # Engineering standard — see STYLE.md for the rationale and the Shall/Will/Should
 # tiers. Almost everything sits at `warn` (the build stays green) and ratchets to
 # `deny` as the code is cleaned. Clippy lints fire under `cargo clippy`.
+# The release build is the product (the single self-contained exe). Fold the crate
+# graph together and strip symbols: a smaller binary that also runs faster — the
+# cross-crate inlining matters in the rasteriser's hot per-cell loop.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
 [lints.rust]
 unsafe_code = "forbid"
 

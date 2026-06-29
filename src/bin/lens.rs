@@ -41,10 +41,11 @@ const VIEW_W: usize = 48;
 const VIEW_H: usize = 32 + render::STATUS_ROWS;
 const CELL: usize = 16;
 
-/// The heartbeat: how often the render clock asks for a fresh frame. Fast enough that
-/// the slow breath reads as smooth, slow enough that the machine mostly sleeps — a
-/// steady beat, never a busy spin.
-const BEAT: Duration = Duration::from_millis(16);
+/// The heartbeat: how often the render clock asks for a fresh frame. The breath is a
+/// slow sine, so ~30 beats a second reads as perfectly smooth while leaving the machine
+/// asleep most of each beat. A keystroke redraws at once regardless, so input never
+/// waits on this — it paces only the idle breath.
+const BEAT: Duration = Duration::from_millis(33);
 
 fn main() -> Result<(), winit::error::EventLoopError> {
 	let mut world = build_world();
@@ -60,10 +61,12 @@ fn main() -> Result<(), winit::error::EventLoopError> {
 	// The heartbeat sets the cadence from `about_to_wait`; start it waiting.
 	event_loop.set_control_flow(ControlFlow::Wait);
 
+	let now = Instant::now();
 	let mut lens = Lens {
 		world,
 		frame: Box::new(Frame::blank()),
-		start: Instant::now(),
+		start: now,
+		next_beat: now,
 		atlas: Atlas::baked(),
 		window: None,
 		context: None,
@@ -93,6 +96,10 @@ struct Lens {
 	/// The render clock — render-time, never world-time. The breath and time-pulse
 	/// read `start.elapsed()`; the world only moves on a keystroke.
 	start:   Instant,
+	/// When the next breath is due. The heartbeat asks for a redraw only once this
+	/// deadline passes, then sleeps until the one after — so the loop idles between
+	/// beats instead of spinning a core flat out.
+	next_beat: Instant,
 	/// The baked glyph atlas, parsed once at startup and stamped per cell.
 	atlas:   Atlas,
 	window:  Option<Rc<Window>>,
@@ -157,14 +164,20 @@ impl ApplicationHandler for Lens {
 		}
 	}
 
-	/// The heartbeat. Between events winit calls this; we ask for one fresh frame and
-	/// then sleep until the next beat. That steady redraw is what lets render-time
-	/// breathe the aura while the world itself holds perfectly still.
+	/// The heartbeat. winit calls this before the loop waits; we ask for a fresh frame
+	/// *only* once the beat is actually due, then sleep until the next one. Requesting a
+	/// redraw every pass instead would leave one forever pending and spin a core flat
+	/// out — the `WaitUntil` would never get to idle. Gating on the deadline is what lets
+	/// render-time breathe the aura while the machine mostly sleeps.
 	fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-		if let Some(window) = &self.window {
-			window.request_redraw();
+		let now = Instant::now();
+		if now >= self.next_beat {
+			self.next_beat = now + BEAT;
+			if let Some(window) = &self.window {
+				window.request_redraw();
+			}
 		}
-		event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + BEAT));
+		event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_beat));
 	}
 }
 
@@ -232,13 +245,17 @@ impl Lens {
 
 /// Turn the cell grid into lit pixels, **scaled to fit the window** — so the build is
 /// resizable: the fixed `W`×`H` frame fills whatever size the window is, square cells,
-/// centred and letterboxed (never stretched). A pixel maps to its cell, then to the
-/// glyph-pixel it covers; a lit glyph-pixel takes the cell's ink, everything else
-/// (gaps, letterbox) is [`VOID`].
+/// centred and letterboxed (never stretched). The whole field starts as [`VOID`]
+/// (letterbox, gaps, and unlit glyph pixels are all void); then each cell paints only
+/// its *lit* glyph pixels in the cell's ink.
+///
+/// Cell-major, not pixel-major: the atlas is consulted **once per cell**, not once per
+/// pixel, so a frame costs `W*H` glyph lookups instead of `width*height` of them — the
+/// difference between hundreds and hundreds of thousands every breath.
 ///
 /// A blank cell is bare void; a glyph the atlas doesn't carry yet falls back to a solid
 /// block. No allocation, no raw indexing (ward 2): every access is bounds-checked, and
-/// the glyph fills only `span` of each cell so `inx / scale` can never overshoot the
+/// the glyph fills only `span` of each cell so `gx / scale` can never overshoot the
 /// 8-wide bitmap.
 ///
 /// [`VOID`]: render::palette::VOID
@@ -253,29 +270,40 @@ fn rasterise<const W: usize, const H: usize>(
 	let scale = (cell / render::atlas::GLYPH_W).max(1);
 	let span = render::atlas::GLYPH_W * scale; // glyph fills this much of the cell; the rest is gap
 	let void = pack(render::palette::VOID);
-	for py in 0..height {
-		let row = py * width;
-		let inside_y = py.checked_sub(off_y).filter(|&ly| ly < H * cell);
-		for px in 0..width {
-			let inside_x = px.checked_sub(off_x).filter(|&lx| lx < W * cell);
-			let color = match (inside_x, inside_y) {
-				(Some(lx), Some(ly)) => {
-					let here = frame.at(lx / cell, ly / cell);
-					let glyph = here.map_or(' ', |c| c.glyph);
-					let (inx, iny) = (lx % cell, ly % cell);
-					let lit = if glyph == ' ' || inx >= span || iny >= span {
-						false
-					} else if let Some(bm) = atlas.glyph(glyph) {
-						bm.get(iny / scale).is_some_and(|&bits| bits & (0x80u8 >> (inx / scale)) != 0)
-					} else {
-						true // a glyph not yet drawn: a solid block, so it still reads
+
+	// The ground for everything: letterbox, inter-glyph gaps, and unlit pixels all read
+	// as void. Cells then stamp their lit pixels over the top.
+	for slot in pixels.iter_mut() {
+		*slot = void;
+	}
+
+	for cy in 0..H {
+		let base_y = off_y + cy * cell;
+		for cx in 0..W {
+			let Some(here) = frame.at(cx, cy) else { continue };
+			if here.glyph == ' ' {
+				continue; // a blank cell is bare void; nothing to stamp
+			}
+			let ink = pack(here.ink);
+			// One atlas lookup for the whole cell. `None` ⇒ a glyph not yet drawn, shown
+			// as a solid block so it still reads.
+			let bm = atlas.glyph(here.glyph);
+			let base_x = off_x + cx * cell;
+			for gy in 0..span {
+				let py = base_y + gy;
+				let row = py * width;
+				let bits = bm.and_then(|g| g.get(gy / scale).copied());
+				for gx in 0..span {
+					let lit = match bits {
+						Some(bits) => bits & (0x80u8 >> (gx / scale)) != 0,
+						None       => true, // solid-block fallback
 					};
-					if lit { here.map_or(void, |c| pack(c.ink)) } else { void }
+					if lit {
+						if let Some(slot) = pixels.get_mut(row + base_x + gx) {
+							*slot = ink;
+						}
+					}
 				}
-				_ => void, // the letterbox band around the centred grid
-			};
-			if let Some(slot) = pixels.get_mut(row + px) {
-				*slot = color;
 			}
 		}
 	}
