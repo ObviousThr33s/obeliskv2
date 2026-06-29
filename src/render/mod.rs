@@ -235,7 +235,7 @@ fn paint_status<const W: usize, const H: usize>(
 	let mut col = put_str(frame, 3, status_row, "facing ", palette::STATUS);
 	col = put_str(frame, col, status_row, facing, palette::STATUS);
 	put_str(frame, col, status_row,
-		"    move ↑/w   turn ←/→   wait space   quit q", palette::STATUS);
+		"    move ↑↓←→/wasd   wait space   quit q", palette::STATUS);
 
 	if let Some(line) = &world.spoken {
 		put_str(frame, 0, spoken_row, line, palette::AMBER);

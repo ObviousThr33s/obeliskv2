@@ -59,6 +59,9 @@ pub enum Intent {
 	TurnLeft,
 	/// Turn a quarter-turn right, without moving.
 	TurnRight,
+	/// Step one cell in a cardinal direction, facing that way — simple directional
+	/// control. (Tank-style `Forward`/`TurnLeft`/`TurnRight` stay, for a later mode.)
+	Step(Heading),
 }
 
 /// A safe spot — the fountain of wisps. Within `radius` cells of `center`
@@ -191,6 +194,12 @@ impl World {
 				let (dx, dy) = self.facing.delta();
 				self.field.move_entity(PLAYER, dx, dy);
 			}
+			Intent::Step(heading) => {
+				// Simple directional: face the way you go, then step there.
+				self.facing = heading;
+				let (dx, dy) = heading.delta();
+				self.field.move_entity(PLAYER, dx, dy);
+			}
 			Intent::Wait => {}
 		}
 		// Sight is the law of this world: the moth holds while watched, and moves
@@ -317,6 +326,14 @@ mod tests {
 		assert_eq!(w.field.get(PLAYER).unwrap().pos, Pos { x: 6, y: 5 }, "a turn does not move you");
 		w.tick(Intent::Forward);
 		assert_eq!(w.field.get(PLAYER).unwrap().pos, Pos { x: 6, y: 6 }, "south is +y, down on screen");
+	}
+
+	#[test]
+	fn a_directional_step_moves_and_faces_that_way() {
+		let mut w = World::new(Pos { x: 5, y: 5 }, Pos { x: 40, y: 40 });
+		w.tick(Intent::Step(Heading::South));
+		assert_eq!(w.field.get(PLAYER).unwrap().pos, Pos { x: 5, y: 6 }, "south is +y");
+		assert_eq!(w.facing, Heading::South, "and you face the way you moved");
 	}
 
 	#[test]

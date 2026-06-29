@@ -27,7 +27,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
-use obelisk::world::entity::Pos;
+use obelisk::world::entity::{Heading, Pos};
 use obelisk::content::lore::Lore;
 use obelisk::render::{self, Frame};
 use obelisk::render::atlas::Atlas;
@@ -45,7 +45,7 @@ const CELL: usize = 16;
 /// The heartbeat: how often the render clock asks for a fresh frame. Fast enough that
 /// the slow breath reads as smooth, slow enough that the machine mostly sleeps — a
 /// steady beat, never a busy spin.
-const BEAT: Duration = Duration::from_millis(50);
+const BEAT: Duration = Duration::from_millis(16);
 
 fn main() -> Result<(), winit::error::EventLoopError> {
 	let mut world = build_world();
@@ -176,19 +176,21 @@ impl Lens {
 			return;
 		}
 		let intent = match key.logical_key {
-			Key::Named(NamedKey::ArrowUp) => Intent::Forward,
-			Key::Named(NamedKey::ArrowLeft) => Intent::TurnLeft,
-			Key::Named(NamedKey::ArrowRight) => Intent::TurnRight,
-			Key::Named(NamedKey::ArrowDown | NamedKey::Space) => Intent::Wait,
+			Key::Named(NamedKey::ArrowUp) => Intent::Step(Heading::North),
+			Key::Named(NamedKey::ArrowDown) => Intent::Step(Heading::South),
+			Key::Named(NamedKey::ArrowLeft) => Intent::Step(Heading::West),
+			Key::Named(NamedKey::ArrowRight) => Intent::Step(Heading::East),
+			Key::Named(NamedKey::Space) => Intent::Wait,
 			Key::Named(NamedKey::Escape) => {
 				event_loop.exit();
 				return;
 			}
 			Key::Character(ref c) => match c.as_str() {
-				"w" => Intent::Forward,
-				"a" => Intent::TurnLeft,
-				"d" => Intent::TurnRight,
-				"s" | " " => Intent::Wait,
+				"w" => Intent::Step(Heading::North),
+				"s" => Intent::Step(Heading::South),
+				"a" => Intent::Step(Heading::West),
+				"d" => Intent::Step(Heading::East),
+				" " => Intent::Wait,
 				"q" => {
 					event_loop.exit();
 					return;

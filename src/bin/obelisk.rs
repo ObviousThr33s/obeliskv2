@@ -3,7 +3,7 @@
 //! `stones/the-glass.md`). You carry the eye; the moth holds while you watch her
 //! and comes to the light the moment you look away.
 //!
-//! Controls: move forward `↑`/`w`, turn `←`/`→` (or `a`/`d`), wait `space`,
+//! Controls: move `↑↓←→` or `wasd` (you face the way you move), wait `space`,
 //! quit `q`. This file is only input and ink now: the world is the library, and
 //! the *projection* — what each cell holds and in what tone — lives in
 //! [`obelisk::render`], the one truth the windowed build draws from too.
@@ -19,7 +19,7 @@ use crossterm::{
 	terminal,
 };
 
-use obelisk::world::entity::Pos;
+use obelisk::world::entity::{Heading, Pos};
 use obelisk::content::lore::Lore;
 use obelisk::render::{self, Cell, Frame};
 use obelisk::world::terrain;
@@ -43,7 +43,7 @@ fn main() -> io::Result<()> {
 		render::render(&world, &mut frame, start.elapsed());
 		draw(&mut out, &frame)?;
 		// Poll, so the fountain can breathe between keystrokes rather than blocking on input.
-		if !event::poll(Duration::from_millis(90))? {
+		if !event::poll(Duration::from_millis(33))? {
 			continue;
 		}
 		if let Event::Key(key) = event::read()? {
@@ -54,10 +54,11 @@ fn main() -> io::Result<()> {
 			}
 			let intent = match key.code {
 				KeyCode::Char('q') | KeyCode::Esc => break,
-				KeyCode::Up | KeyCode::Char('w') => Intent::Forward,
-				KeyCode::Left | KeyCode::Char('a') => Intent::TurnLeft,
-				KeyCode::Right | KeyCode::Char('d') => Intent::TurnRight,
-				KeyCode::Down | KeyCode::Char('s') | KeyCode::Char(' ') => Intent::Wait,
+				KeyCode::Up | KeyCode::Char('w') => Intent::Step(Heading::North),
+				KeyCode::Down | KeyCode::Char('s') => Intent::Step(Heading::South),
+				KeyCode::Left | KeyCode::Char('a') => Intent::Step(Heading::West),
+				KeyCode::Right | KeyCode::Char('d') => Intent::Step(Heading::East),
+				KeyCode::Char(' ') => Intent::Wait,
 				_ => continue, // an unbound key spends no tick
 			};
 			world.tick(intent);
