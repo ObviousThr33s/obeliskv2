@@ -147,6 +147,12 @@ impl ApplicationHandler for Lens {
 			WindowEvent::CloseRequested => event_loop.exit(),
 			WindowEvent::KeyboardInput { event: key, .. } => self.on_key(event_loop, key),
 			WindowEvent::RedrawRequested => self.redraw(),
+			WindowEvent::Resized(_) => {
+				// The window changed size; repaint so the grid re-fits to it.
+				if let Some(window) = &self.window {
+					window.request_redraw();
+				}
+			}
 			_ => {}
 		}
 	}
@@ -222,14 +228,16 @@ impl Lens {
 	}
 }
 
-/// Turn the cell grid into lit pixels, stamping each cell's glyph from the atlas.
-/// A pixel asks which cell it falls in, then which glyph-pixel it covers (the cell
-/// is `CELL`/`GLYPH_W` times the glyph's size). A lit glyph-pixel takes the cell's
-/// ink; everything else is [`VOID`], so the field reads as shapes on dark ground.
+/// Turn the cell grid into lit pixels, **scaled to fit the window** — so the build is
+/// resizable: the fixed `W`×`H` frame fills whatever size the window is, square cells,
+/// centred and letterboxed (never stretched). A pixel maps to its cell, then to the
+/// glyph-pixel it covers; a lit glyph-pixel takes the cell's ink, everything else
+/// (gaps, letterbox) is [`VOID`].
 ///
-/// A blank cell is bare void; a glyph the atlas doesn't carry yet (e.g. status
-/// letters) falls back to a solid block, so it still reads. No allocation, no raw
-/// indexing (ward 2, the safe subset): every access is bounds-checked.
+/// A blank cell is bare void; a glyph the atlas doesn't carry yet falls back to a solid
+/// block. No allocation, no raw indexing (ward 2): every access is bounds-checked, and
+/// the glyph fills only `span` of each cell so `inx / scale` can never overshoot the
+/// 8-wide bitmap.
 ///
 /// [`VOID`]: render::palette::VOID
 fn rasterise<const W: usize, const H: usize>(
@@ -239,29 +247,46 @@ fn rasterise<const W: usize, const H: usize>(
 	height: usize,
 	pixels: &mut [u32],
 ) {
-	let scale = (CELL / render::atlas::GLYPH_W).max(1);
+	let (cell, off_x, off_y) = fit(width, height, W, H);
+	let scale = (cell / render::atlas::GLYPH_W).max(1);
+	let span = render::atlas::GLYPH_W * scale; // glyph fills this much of the cell; the rest is gap
 	let void = pack(render::palette::VOID);
 	for py in 0..height {
-		let cy = py / CELL;
-		let gy = (py % CELL) / scale;
 		let row = py * width;
+		let inside_y = py.checked_sub(off_y).filter(|&ly| ly < H * cell);
 		for px in 0..width {
-			let cell = frame.at(px / CELL, cy);
-			let glyph = cell.map_or(' ', |c| c.glyph);
-			let lit = if glyph == ' ' {
-				false // bare ground: the void shows through
-			} else if let Some(bm) = atlas.glyph(glyph) {
-				let gx = (px % CELL) / scale;
-				bm.get(gy).is_some_and(|&bits| bits & (0x80u8 >> gx) != 0)
-			} else {
-				true // a glyph not yet drawn: a solid block, so it still reads
+			let inside_x = px.checked_sub(off_x).filter(|&lx| lx < W * cell);
+			let color = match (inside_x, inside_y) {
+				(Some(lx), Some(ly)) => {
+					let here = frame.at(lx / cell, ly / cell);
+					let glyph = here.map_or(' ', |c| c.glyph);
+					let (inx, iny) = (lx % cell, ly % cell);
+					let lit = if glyph == ' ' || inx >= span || iny >= span {
+						false
+					} else if let Some(bm) = atlas.glyph(glyph) {
+						bm.get(iny / scale).is_some_and(|&bits| bits & (0x80u8 >> (inx / scale)) != 0)
+					} else {
+						true // a glyph not yet drawn: a solid block, so it still reads
+					};
+					if lit { here.map_or(void, |c| pack(c.ink)) } else { void }
+				}
+				_ => void, // the letterbox band around the centred grid
 			};
-			let color = if lit { cell.map_or(void, |c| pack(c.ink)) } else { void };
 			if let Some(slot) = pixels.get_mut(row + px) {
 				*slot = color;
 			}
 		}
 	}
+}
+
+/// The square cell size and centring offsets to fit a `cols`×`rows` grid into a
+/// `width`×`height` window — letterboxed, never stretched. The cell is bound by
+/// whichever axis is tighter, and is always at least one pixel.
+fn fit(width: usize, height: usize, cols: usize, rows: usize) -> (usize, usize, usize) {
+	let cell = (width / cols.max(1)).min(height / rows.max(1)).max(1);
+	let off_x = width.saturating_sub(cols * cell) / 2;
+	let off_y = height.saturating_sub(rows * cell) / 2;
+	(cell, off_x, off_y)
 }
 
 /// Pack an [`render::Rgb`] into the `0x00RRGGBB` word softbuffer presents.
@@ -273,4 +298,23 @@ fn pack(ink: render::Rgb) -> u32 {
 /// tiny; the saturating fallback can never actually be reached.
 fn as_u32(n: usize) -> u32 {
 	u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn fit_centres_a_square_grid_and_letterboxes() {
+		// A 4x2 grid into 100x100: the width axis is tighter (100/4=25 < 100/2=50), so the
+		// cell is 25, the grid is 100x50, centred -> letterboxed top and bottom.
+		let (cell, off_x, off_y) = fit(100, 100, 4, 2);
+		assert_eq!(cell, 25, "cell is bound by whichever axis is tighter");
+		assert_eq!((off_x, off_y), (0, 25), "centred, letterboxed on the looser axis");
+	}
+
+	#[test]
+	fn fit_never_returns_a_zero_cell() {
+		assert_eq!(fit(1, 1, 48, 34).0, 1, "even a window smaller than the grid keeps a 1px cell");
+	}
 }
