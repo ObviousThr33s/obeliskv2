@@ -1,13 +1,13 @@
 //! The spatial container: entities indexed by id and by position.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use crate::world::entity::{Entity, EntityId, Pos};
 
 /// A 2D field of placed entities — the world's spatial truth.
 pub struct Field {
-	pub entities:     HashMap<EntityId, Entity>,
+	pub entities:     BTreeMap<EntityId, Entity>,
 	/// Position → id fast lookup. Kept in sync with `entities` on every write.
-	spatial_index:    HashMap<(i32, i32), EntityId>,
+	spatial_index:    BTreeMap<(i32, i32), EntityId>,
 	/// Next id `mint` hands out. Starts at `1` so minted ids never collide with
 	/// the player's fixed [`PLAYER`] (`0`).
 	next_id:          EntityId,
@@ -15,7 +15,7 @@ pub struct Field {
 
 impl Field {
 	pub fn new() -> Self {
-		Field { entities: HashMap::new(), spatial_index: HashMap::new(), next_id: 1 }
+		Field { entities: BTreeMap::new(), spatial_index: BTreeMap::new(), next_id: 1 }
 	}
 
 	/// Hands out a fresh unique [`EntityId`].

@@ -9,7 +9,7 @@
 //! you remember, frozen where you last saw her, and that memory fades tick by
 //! tick until it is gone.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use crate::world::entity::EntityId;
 
 /// One remembered sighting: a glyph at the place it was last seen, and how
@@ -24,14 +24,14 @@ pub struct Sighting {
 
 /// What the watcher remembers of the beings it has seen, keyed by [`EntityId`].
 pub struct Recollection {
-	sightings: HashMap<EntityId, Sighting>,
+	sightings: BTreeMap<EntityId, Sighting>,
 	/// Clarity lost per tick that a remembered being goes unseen.
 	fade: f32,
 }
 
 impl Recollection {
 	pub fn new(fade: f32) -> Self {
-		Self { sightings: HashMap::new(), fade }
+		Self { sightings: BTreeMap::new(), fade }
 	}
 
 	/// Record a being seen right now: full clarity at her true position.
@@ -42,7 +42,7 @@ impl Recollection {
 	/// Let one tick of forgetting pass. Every remembered being whose id is not
 	/// in `seen_now` fades by `fade`; memories that reach zero are forgotten.
 	/// Call once per tick, after glimpsing everything visible this tick.
-	pub fn fade_unseen(&mut self, seen_now: &HashSet<EntityId>) {
+	pub fn fade_unseen(&mut self, seen_now: &BTreeSet<EntityId>) {
 		let fade = self.fade;
 		self.sightings.retain(|id, s| {
 			if seen_now.contains(id) { return true; }
@@ -65,7 +65,7 @@ impl Recollection {
 mod tests {
 	use super::*;
 
-	fn seen(ids: &[EntityId]) -> HashSet<EntityId> {
+	fn seen(ids: &[EntityId]) -> BTreeSet<EntityId> {
 		ids.iter().copied().collect()
 	}
 

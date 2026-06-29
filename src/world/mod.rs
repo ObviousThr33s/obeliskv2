@@ -11,7 +11,7 @@ pub mod vision;
 pub mod terrain;
 pub mod watcher;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use crate::world::entity::{Entity, EntityId, Heading, Priority, Pos, PLAYER};
 use crate::world::event::Event;
 use crate::world::field::Field;
@@ -92,10 +92,10 @@ pub struct World {
 	sanctuary:        Option<Sanctuary>,
 	haps:             Haps,
 	/// The data half (name, stats) of the watchers placed in the world, keyed by id.
-	watchers:         HashMap<EntityId, watcher::Watcher>,
+	watchers:         BTreeMap<EntityId, watcher::Watcher>,
 	/// How far each watcher has faded into the fountain this breath (0 = fully present),
 	/// keyed by id — every watcher breathes her own cycle.
-	breath:           HashMap<EntityId, u32>,
+	breath:           BTreeMap<EntityId, u32>,
 }
 
 impl World {
@@ -105,7 +105,7 @@ impl World {
 		field.add(Entity::new(MOTH,   moth_pos,   'm', Priority::Med));
 		field.reserve_past(MOTH); // generation mints past the principals, never over them
 		// The moth is a watcher too, so she breathes by her own astuteness like the rest.
-		let mut watchers = HashMap::new();
+		let mut watchers = BTreeMap::new();
 		watchers.insert(MOTH, watcher::Watcher { name: "the moth".to_string(), health: 8, power: 6 });
 		World {
 			field,
@@ -118,7 +118,7 @@ impl World {
 			sanctuary: None,
 			haps: Haps::new(),
 			watchers,
-			breath: HashMap::new(),
+			breath: BTreeMap::new(),
 		}
 	}
 
@@ -323,7 +323,7 @@ impl World {
 
 		// Mutation: the watcher's memory follows what it can see this tick — glimpse
 		// the visible, then let the rest fade. Shared state, so it moves only here.
-		let mut seen_now = HashSet::new();
+		let mut seen_now = BTreeSet::new();
 		if sees_moth {
 			if let Some(m) = self.field.get(MOTH) {
 				self.recollection.glimpse(MOTH, m.glyph, m.pos.x, m.pos.y);

@@ -4,12 +4,12 @@
 //! files (see `lore/voice.txt`), never hardcoded here, so the story can be
 //! rewritten without touching the engine.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// A table of story lines keyed by a moment's name (e.g. `"seen.moth"`).
 #[derive(Default)]
 pub struct Lore {
-	lines: HashMap<String, String>,
+	lines: BTreeMap<String, String>,
 }
 
 impl Lore {
@@ -17,7 +17,7 @@ impl Lore {
 	/// whitespace around both sides is trimmed. A repeated key takes its last
 	/// value, so a content file can override an earlier line further down.
 	pub fn parse(source: &str) -> Self {
-		let mut lines = HashMap::new();
+		let mut lines = BTreeMap::new();
 		for raw in source.lines() {
 			let line = raw.trim();
 			if line.is_empty() || line.starts_with('#') {

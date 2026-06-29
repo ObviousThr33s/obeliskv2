@@ -6,7 +6,7 @@
 //! (`lens`) stamps these into pixels, scaled to its cell; the terminal needs none
 //! of this, since it prints real characters.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// A glyph is `GLYPH_H` rows of `GLYPH_W` bits; within a row, `0x80 >> x` is column `x`.
 pub const GLYPH_W: usize = 8;
@@ -18,7 +18,7 @@ pub type Glyph = [u8; GLYPH_H];
 /// A map from character to its baked bitmap. Built once (parsed from the baked
 /// file), then read per frame — no per-frame allocation (ward 2).
 pub struct Atlas {
-	glyphs: HashMap<char, Glyph>,
+	glyphs: BTreeMap<char, Glyph>,
 }
 
 impl Atlas {
@@ -57,7 +57,7 @@ impl Atlas {
 	/// rows where `#` is a lit pixel. Blank lines and `;` comments are skipped. A
 	/// malformed line is simply ignored — never a panic (the safe subset).
 	pub fn parse(src: &str) -> Self {
-		fn flush(c: Option<char>, rows: &mut Vec<u8>, glyphs: &mut HashMap<char, Glyph>) {
+		fn flush(c: Option<char>, rows: &mut Vec<u8>, glyphs: &mut BTreeMap<char, Glyph>) {
 			if let Some(ch) = c {
 				let mut g: Glyph = [0; GLYPH_H];
 				for (slot, bits) in g.iter_mut().zip(rows.iter()) {
@@ -68,7 +68,7 @@ impl Atlas {
 			rows.clear();
 		}
 
-		let mut glyphs = HashMap::new();
+		let mut glyphs = BTreeMap::new();
 		let mut current: Option<char> = None;
 		let mut rows: Vec<u8> = Vec::new();
 
