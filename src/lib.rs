@@ -13,3 +13,5 @@
 pub mod world;
 pub mod render;
 pub mod content;
+/// The terminal front-end shared by the `obelisk` and `obelisk_debug` leaves.
+pub mod terminal;
